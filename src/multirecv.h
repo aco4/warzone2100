@@ -38,6 +38,7 @@ bool receiveInGameTextMessage(NETQUEUE queue);
 bool recvDroidDisEmbark(NETQUEUE queue);
 bool recvColourRequest(NETQUEUE queue);
 bool recvFactionRequest(NETQUEUE queue);
+bool recvDifficultyRequest(NETQUEUE queue);
 bool recvPositionRequest(NETQUEUE queue);
 bool recvOptions(NETQUEUE queue);
 void sendOptions();

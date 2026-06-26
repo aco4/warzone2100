@@ -1308,6 +1308,7 @@ HandleMessageAction getMessageHandlingAction(NETQUEUE& queue, uint8_t type)
 			case NET_TEAMREQUEST: // spectators should not be allowed to request a team / non-spectator slot status
 			case NET_FACTIONREQUEST:
 			case NET_POSITIONREQUEST:
+			case NET_DIFFICULTYREQUEST:
 				if (senderIsSpectator && !senderIsAdmin)
 				{
 					return HandleMessageAction::Disallow_And_Kick_Sender;

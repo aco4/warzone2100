@@ -3498,6 +3498,10 @@ DROID *giftSingleDroid(DROID *psD, UDWORD to, bool electronic, Vector2i pos)
 	ASSERT_OR_RETURN(nullptr, !isDead(psD), "Cannot gift dead unit");
 	ASSERT_OR_RETURN(psD, psD->player != to, "Cannot gift to self");
 	ASSERT_OR_RETURN(nullptr, to < MAX_PLAYERS, "Cannot gift to = %" PRIu32 "", to);
+	if (bMultiPlayer)
+	{
+		ASSERT_OR_RETURN(nullptr, NETplayerHasConnection(to), "Cannot gift to disconnected player");
+	}
 
 	// Check unit limits (multiplayer only)
 	syncDebug("Limits: %u/%d %u/%d %u/%d", getNumDroids(to), getMaxDroids(to), getNumConstructorDroids(to), getMaxConstructors(to), getNumCommandDroids(to), getMaxCommanders(to));

@@ -396,6 +396,13 @@ void giftPower(uint8_t from, uint8_t to, uint32_t amount, bool send)
 {
 	if (send)
 	{
+		// Check that recipient player is still connected before sending the gift
+		if (bMultiPlayer && !NETplayerHasConnection(to))
+		{
+			debug(LOG_WARNING, "Cannot gift power from %d to %d (disconnected player)", (int)from, (int)to);
+			return;
+		}
+
 		uint8_t giftType = POWER_GIFT;
 
 		auto w = NETbeginEncode(NETgameQueue(realSelectedPlayer), GAME_GIFT);

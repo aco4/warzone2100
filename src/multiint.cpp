@@ -242,6 +242,7 @@ static	void	SendFireUp();
 
 static	void	decideWRF();
 
+static bool		SendDifficultyRequest(UBYTE player, AIDifficulty difficulty);
 static bool		SendFactionRequest(UBYTE player, UBYTE faction);
 static bool		SendPositionRequest(UBYTE player, UBYTE chosenPlayer);
 static bool		SendPlayerSlotTypeRequest(uint32_t player, bool isSpectator);
@@ -1502,7 +1503,10 @@ static std::shared_ptr<WzMultiButton> addMultiButWithClickHandler(const std::sha
 
 void WzMultiplayerOptionsTitleUI::openDifficultyChooser(uint32_t player)
 {
-	ASSERT_HOST_ONLY(return);
+	if (!isHostOrAdmin() || locked.difficulty)
+	{
+		return;
+	}
 
 	std::shared_ptr<IntFormAnimated> aiForm = initRightSideChooser(_("DIFFICULTY"));
 	if (!aiForm)
@@ -1518,9 +1522,7 @@ void WzMultiplayerOptionsTitleUI::openDifficultyChooser(uint32_t player)
 		auto onClickHandler = [psWeakTitleUI, difficultyIdx, player](W_BUTTON& clickedButton) {
 			auto pStrongPtr = psWeakTitleUI.lock();
 			ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
-			NetPlay.players[player].difficulty = difficultyValue[difficultyIdx];
-			NETBroadcastPlayerInfo(player);
-			resetReadyStatus(false, isBlindSimpleLobby(game.blindMode));
+			SendDifficultyRequest(player, difficultyValue[difficultyIdx]);
 			widgScheduleTask([pStrongPtr] {
 				pStrongPtr->closeDifficultyChooser();
 				pStrongPtr->addPlayerBox(true);
@@ -2976,6 +2978,44 @@ static bool SendPositionRequest(UBYTE player, UBYTE position)
 	return true;
 }
 
+static bool validLobbyAIDifficulty(AIDifficulty difficulty)
+{
+	return difficulty >= AIDifficulty::EASY && difficulty <= AIDifficulty::INSANE;
+}
+
+static bool changeDifficulty(UBYTE player, AIDifficulty difficulty)
+{
+	ASSERT_HOST_ONLY(return false);
+
+	if (player >= MAX_PLAYERS || !validLobbyAIDifficulty(difficulty))
+	{
+		return false;
+	}
+	if (NetPlay.players[player].allocated || NetPlay.players[player].ai < 0 || NetPlay.players[player].isSpectator)
+	{
+		return false;
+	}
+
+	NetPlay.players[player].difficulty = difficulty;
+	NETBroadcastPlayerInfo(player);
+	resetReadyStatus(false, isBlindSimpleLobby(game.blindMode));
+	return true;
+}
+
+static bool SendDifficultyRequest(UBYTE player, AIDifficulty difficulty)
+{
+	if (NetPlay.isHost)
+	{
+		return changeDifficulty(player, difficulty);
+	}
+
+	auto w = NETbeginEncode(NETnetQueue(NetPlay.hostPlayer), NET_DIFFICULTYREQUEST);
+	NETuint8_t(w, player);
+	NETint8_t(w, static_cast<int8_t>(difficulty));
+	NETend(w);
+	return true;
+}
+
 bool recvFactionRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
@@ -3008,6 +3048,39 @@ bool recvFactionRequest(NETQUEUE queue)
 	}
 
 	return changeFaction(player, newFactionId.value(), queue.index);
+}
+
+bool recvDifficultyRequest(NETQUEUE queue)
+{
+	ASSERT_HOST_ONLY(return true);
+
+	UBYTE player;
+	int8_t difficulty;
+	auto r = NETbeginDecode(queue, NET_DIFFICULTYREQUEST);
+	NETuint8_t(r, player);
+	NETint8_t(r, difficulty);
+	NETend(r);
+
+	const auto requestedDifficulty = static_cast<AIDifficulty>(difficulty);
+	if (player >= MAX_PLAYERS || !validLobbyAIDifficulty(requestedDifficulty))
+	{
+		debug(LOG_ERROR, "Invalid NET_DIFFICULTYREQUEST from player %d: Tried to change player %d to difficulty %d",
+		      queue.index, (int)player, (int)difficulty);
+		return false;
+	}
+
+	if (!NetPlay.players[queue.index].isAdmin && queue.index != NetPlay.hostPlayer)
+	{
+		HandleBadParam("NET_DIFFICULTYREQUEST given incorrect params.", player, queue.index);
+		return false;
+	}
+
+	if (locked.difficulty)
+	{
+		return false;
+	}
+
+	return changeDifficulty(player, requestedDifficulty);
 }
 
 bool recvColourRequest(NETQUEUE queue)
@@ -6152,6 +6225,15 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 				break;
 			}
 			recvPositionRequest(queue);
+			break;
+
+		case NET_DIFFICULTYREQUEST:
+			if (multiplayIsStartingGame())
+			{
+				ignoredMessage = true;
+				break;
+			}
+			recvDifficultyRequest(queue);
 			break;
 
 		case NET_TEAMREQUEST:

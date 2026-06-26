@@ -2185,6 +2185,7 @@ static inline bool NETFilterMessageWhileSwappingPlayer(uint8_t sender, uint8_t t
 	case NET_TEAMREQUEST:                ///< request team membership
 	case NET_READY_REQUEST:              ///< player ready to start an mp game
 	case NET_POSITIONREQUEST:            ///< position in GUI player list
+	case NET_DIFFICULTYREQUEST:          ///< AI difficulty in GUI player list
 	case NET_DATA_CHECK:                 ///< Data integrity check
 	case NET_DATA_CHECK2:
 		return true; // filter / ignore
@@ -2384,6 +2385,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
 				      || msgType == NET_COLOURREQUEST
 				      || msgType == NET_POSITIONREQUEST
 					  || msgType == NET_FACTIONREQUEST
+					  || msgType == NET_DIFFICULTYREQUEST
 				      || msgType == NET_FILE_CANCELLED
 					  || msgType == NET_DATA_CHECK
 				      || msgType == NET_JOIN
@@ -4994,6 +4996,7 @@ const char *messageTypeToString(unsigned messageType_)
 	case NET_TEAM_STRATEGY:				return "NET_TEAM_STRATEGY";
 	case NET_QUICK_CHAT_MSG:			return "NET_QUICK_CHAT_MSG";
 	case NET_HOST_CONFIG:				return "NET_HOST_CONFIG";
+	case NET_DIFFICULTYREQUEST:         return "NET_DIFFICULTYREQUEST";
 	case NET_MAX_TYPE:                  return "NET_MAX_TYPE";
 
 	// Game-state-related messages, must be processed by all clients at the same game time.

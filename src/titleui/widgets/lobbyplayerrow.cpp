@@ -843,7 +843,7 @@ void WzPlayerRow::updateReadyButton()
 		}
 		bool freshDifficultyButton = (difficultyChooserButton == nullptr);
 		difficultyChooserButton = addMultiBut(*readyButtonContainer, MULTIOP_DIFFICULTY_INIT_START + playerIdx, 6, 4, MULTIOP_READY_WIDTH, MULTIOP_READY_HEIGHT,
-					(NetPlay.isHost && !locked.difficulty) ? _("Click to change difficulty") : tooltip, icon, icon, icon, MAX_PLAYERS, (NetPlay.isHost && !locked.difficulty) ? 255 : 125);
+					(isHostOrAdmin() && !locked.difficulty) ? _("Click to change difficulty") : tooltip, icon, icon, icon, MAX_PLAYERS, (isHostOrAdmin() && !locked.difficulty) ? 255 : 125);
 		auto player = playerIdx;
 		auto weakTitleUi = parentTitleUI;
 		if (freshDifficultyButton)
@@ -852,7 +852,7 @@ void WzPlayerRow::updateReadyButton()
 				auto strongTitleUI = weakTitleUi.lock();
 				ASSERT_OR_RETURN(, strongTitleUI != nullptr, "Title UI is gone?");
 				const auto& locked = getLockedOptions();
-				if (!locked.difficulty && NetPlay.isHost)
+				if (!locked.difficulty && isHostOrAdmin())
 				{
 					widgScheduleTask([strongTitleUI, player] {
 						strongTitleUI->openDifficultyChooser(player);
