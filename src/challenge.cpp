@@ -127,9 +127,12 @@ void updateChallenge(bool gameWon)
 	{
 		sPath.truncate(sPath.length() - 5);
 	}
-	scores.beginGroup(sPath);
-	victory = scores.value("victory", false).toBool();
-	seconds = scores.value("seconds", 0).toInt();
+	// In ReadAndWrite mode, beginGroup() yields a fresh empty object (and endGroup()
+	// replaces the stored group with it), so the previous best attempt must be read
+	// from the document root - and the group only entered when actually updating
+	const nlohmann::json prevScore = scores.json(sPath, nlohmann::json::object());
+	victory = prevScore.value("victory", false);
+	seconds = prevScore.value("seconds", 0);
 
 	// Update score if we have a victory and best recorded was a loss,
 	// or both were losses but time is higher, or both were victories
@@ -138,11 +141,12 @@ void updateChallenge(bool gameWon)
 	    || (!gameWon && !victory && newtime > seconds)
 	    || (gameWon && victory && newtime < seconds))
 	{
+		scores.beginGroup(sPath);
 		scores.setValue("seconds", newtime);
 		scores.setValue("victory", gameWon);
 		scores.setValue("player", NetPlay.players[selectedPlayer].name);
+		scores.endGroup();
 	}
-	scores.endGroup();
 }
 
 // ////////////////////////////////////////////////////////////////////////////
