@@ -1508,6 +1508,15 @@ bool droidUpdateRepair(DROID *psDroid)
 	STRUCTURE *psStruct = (STRUCTURE *)psDroid->psActionTarget[0];
 
 	ASSERT_OR_RETURN(false, psStruct->type == OBJ_STRUCTURE, "target is not a structure");
+
+	// droid distance sanity check
+	unsigned distanceSq = droidSqDist(psDroid, psStruct);
+	if (distanceSq > REPAIR_MAXDIST * REPAIR_MAXDIST)
+	{
+		psDroid->action = DACTION_NONE;
+		return false;
+	}
+
 	int iRepairRate = constructorPoints(*psDroid->getConstructStats(), psDroid->player);
 
 	/* add points to structure */
