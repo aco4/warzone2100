@@ -146,7 +146,8 @@ const iIMDBaseShape	*getRandomDebrisImd()
 }
 // -------------------------------------------------------------------------------
 
-iIMDBaseShape	*pAssemblyPointIMDs[NUM_FLAG_TYPES][MAX_FACTORY_FLAG_IMDS + 1];
+/// Numbered assembly point graphics, plus an unnumbered pad in the final slot.
+static iIMDBaseShape	*pAssemblyPointIMDs[NUM_FLAG_TYPES][MAX_FACTORY_FLAG_IMDS + 1];
 
 iIMDBaseShape *getAssemblyPointIMD(unsigned flagType, unsigned factoryInc)
 {
@@ -155,10 +156,8 @@ iIMDBaseShape *getAssemblyPointIMD(unsigned flagType, unsigned factoryInc)
 	return pAssemblyPointIMDs[flagType][std::min<unsigned>(factoryInc, MAX_FACTORY_FLAG_IMDS)];
 }
 
-static bool initMiscImd(unsigned i, unsigned n, const char *nameFormat, unsigned flagType)
+static bool initMiscImd(unsigned i, const char *pieName, unsigned flagType)
 {
-	char pieName[100];
-	snprintf(pieName, sizeof(pieName), nameFormat, n);
 	pAssemblyPointIMDs[flagType][i] = modelGet(pieName);
 	if (!pAssemblyPointIMDs[flagType][i])
 	{
@@ -166,6 +165,13 @@ static bool initMiscImd(unsigned i, unsigned n, const char *nameFormat, unsigned
 		return false;
 	}
 	return true;
+}
+
+static bool initMiscImd(unsigned i, unsigned n, const char *nameFormat, unsigned flagType)
+{
+	char pieName[100];
+	snprintf(pieName, sizeof(pieName), nameFormat, n);
+	return initMiscImd(i, pieName, flagType);
 }
 
 bool	initMiscImds()
@@ -192,10 +198,10 @@ bool	initMiscImds()
 	/* Unnumbered pads, for factories past the last numbered graphic. Repair facilities
 	 * are never numbered, so they just reuse their regular graphic. */
 	const unsigned blank = MAX_FACTORY_FLAG_IMDS;
-	if (!initMiscImd(blank, 0, "minumblank.pie",  FACTORY_FLAG) ||
-	    !initMiscImd(blank, 0, "micnumblank.pie", CYBORG_FLAG) ||
-	    !initMiscImd(blank, 0, "mivnumblank.pie", VTOL_FLAG) ||
-	    !initMiscImd(blank, 1, "mirnum%u.pie",    REPAIR_FLAG))
+	if (!initMiscImd(blank, "minumblank.pie",  FACTORY_FLAG) ||
+	    !initMiscImd(blank, "micnumblank.pie", CYBORG_FLAG) ||
+	    !initMiscImd(blank, "mivnumblank.pie", VTOL_FLAG) ||
+	    !initMiscImd(blank, "mirnum1.pie",     REPAIR_FLAG))
 	{
 		return false;
 	}
