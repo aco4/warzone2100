@@ -4820,6 +4820,12 @@ static bool loadMainFileFinal(const std::string &fileName)
 		{
 			add_to_experience_queue(index, json_variant(v).toInt());
 		}
+		// The .gam only stores colours as 8-bit slot indexes, so re-apply the full value from
+		// here (it may be a packed RGB colour set by a script) - this runs after the .gam load.
+		if (save.contains("colour"))
+		{
+			setPlayerColour(index, save.value("colour").toInt());
+		}
 		setMultiPlayRecentScore(index, save.value("recentScore", 0).toUInt());
 		setMultiPlayUnitsKilled(index, save.value("recentKills", 0).toUInt());
 		setMultiPlayRecentDroidsKilled(index, save.value("recentDroidsKilled", 0).toUInt());
@@ -5123,7 +5129,10 @@ static bool writeGameFile(const char *fileName, SDWORD saveType)
 	}
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
-		saveGame.playerColour[i] = getPlayerColour(i);
+		// This legacy field only holds a colour slot - a packed RGB colour would not fit, so store
+		// a placeholder here. The real value is restored from main.json by loadMainFileFinal().
+		int32_t colour = getPlayerColour(i);
+		saveGame.playerColour[i] = pal_IsRGBColour(colour) ? 0 : static_cast<uint8_t>(colour);
 	}
 	saveGame.radarZoom = (UBYTE)GetRadarZoom();
 

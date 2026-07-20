@@ -25,6 +25,7 @@
 #include "lib/framework/frame.h"
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/ivisdef.h"
+#include "lib/ivis_opengl/piepalette.h"
 #include "lib/netplay/netplay.h"
 
 #include "action.h"
@@ -56,20 +57,20 @@ static bool		leftFirst;
 
 // Colour Lookups
 // use col = MAX_PLAYERS for anycolour (see multiint.c)
-bool setPlayerColour(UDWORD player, UDWORD col)
+bool setPlayerColour(UDWORD player, int32_t col)
 {
 	if (player >= MAX_PLAYERS)
 	{
 		NetPlay.players[player].colour = MAX_PLAYERS;
 		return true;
 	}
-	// Allow color values from 0 to 15
-	ASSERT_OR_RETURN(false, col < 16, "Bad colour setting");
+	// Allow either one of the 16 classic colour slots, or a packed RGB colour
+	ASSERT_OR_RETURN(false, (col >= 0 && col < 16) || pal_IsRGBColour(col), "Bad colour setting");
 	NetPlay.players[player].colour = col;
 	return true;
 }
 
-UBYTE getPlayerColour(UDWORD pl)
+int32_t getPlayerColour(UDWORD pl)
 {
 	if (pl >= MAX_PLAYERS)
 	{
@@ -375,7 +376,7 @@ static inline const iIMDBaseShape *getRightPropulsionIMD(const DROID *psDroid)
 	return asBodyStats[bodyStat].ppIMDList[propStat * NUM_PROP_SIDES + RIGHT_PROP];
 }
 
-void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *flashImd, PIELIGHT buildingBrightness, int pieFlag, int iPieData, glm::mat4 modelMatrix, const glm::mat4 &viewMatrix, float heightAboveTerrain, UBYTE colour)
+void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *flashImd, PIELIGHT buildingBrightness, int pieFlag, int iPieData, glm::mat4 modelMatrix, const glm::mat4 &viewMatrix, float heightAboveTerrain, int32_t colour)
 {
 	if (!weaponImd || !flashImd || weaponImd->connectors.empty() || graphicsTime < sWeap.lastFired)
 	{

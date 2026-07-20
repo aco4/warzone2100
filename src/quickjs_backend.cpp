@@ -31,6 +31,7 @@
 #include "lib/sound/cdaudio.h"
 #include "lib/netplay/netplay.h"
 #include "lib/ivis_opengl/tex.h"
+#include "lib/ivis_opengl/piepalette.h"
 
 #include "action.h"
 #include "clparse.h"
@@ -2020,6 +2021,35 @@ static JSValue callFunction(JSContext *ctx, const std::string &function, std::ve
 				if (argc <= idx)
 					return {};
 				return JSValueToStdString(ctx, argv[idx++]);
+			}
+		};
+
+		template<>
+		struct unbox<wzapi::player_colour>
+		{
+			wzapi::player_colour operator()(size_t& idx, JSContext *ctx, int argc, JSValueConst *argv, const char *function)
+			{
+				if (argc <= idx)
+					return {};
+				wzapi::player_colour result;
+				JSValue value = argv[idx++];
+				if (JS_IsString(value))
+				{
+					result.value = wzapi::parseColourString(JSValueToStdString(ctx, value));
+				}
+				else
+				{
+					int32_t colour = -1;
+					if (!JS_ToInt32(ctx, &colour, value))
+					{
+						// a classic colour slot, or a packed RGB colour read back from playerData
+						if ((colour >= 0 && colour < 16) || pal_IsRGBColour(colour))
+						{
+							result.value = colour;
+						}
+					}
+				}
+				return result;
 			}
 		};
 

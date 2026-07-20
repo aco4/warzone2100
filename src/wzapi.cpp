@@ -34,6 +34,7 @@
 #include "qtscript.h"
 #include "lib/ivis_opengl/tex.h"
 #include "lib/ivis_opengl/piestate.h"
+#include "lib/ivis_opengl/piepalette.h"
 
 #include "action.h"
 #include "clparse.h"
@@ -591,15 +592,48 @@ bool wzapi::replaceTexture(WZAPI_PARAMS(std::string oldFilename, std::string new
 	return replaceTexture(WzString::fromUtf8(oldFilename), WzString::fromUtf8(newFilename));
 }
 
+int32_t wzapi::parseColourString(const std::string& colourString)
+{
+	size_t start = (!colourString.empty() && colourString.front() == '#') ? 1 : 0;
+	size_t len = colourString.size() - start;
+	if (len != 3 && len != 6)
+	{
+		return -1;
+	}
+	UBYTE digits[6];
+	for (size_t i = 0; i < len; i++)
+	{
+		char c = colourString[start + i];
+		if (c >= '0' && c <= '9')      { digits[i] = static_cast<UBYTE>(c - '0'); }
+		else if (c >= 'a' && c <= 'f') { digits[i] = static_cast<UBYTE>(c - 'a' + 10); }
+		else if (c >= 'A' && c <= 'F') { digits[i] = static_cast<UBYTE>(c - 'A' + 10); }
+		else { return -1; }
+	}
+	if (len == 3)
+	{
+		// shorthand form: each digit is doubled, so "#f80" means "#ff8800"
+		return pal_MakeRGBColour(static_cast<UBYTE>(digits[0] * 0x11), static_cast<UBYTE>(digits[1] * 0x11), static_cast<UBYTE>(digits[2] * 0x11));
+	}
+	return pal_MakeRGBColour(static_cast<UBYTE>(digits[0] << 4 | digits[1]),
+	                         static_cast<UBYTE>(digits[2] << 4 | digits[3]),
+	                         static_cast<UBYTE>(digits[4] << 4 | digits[5]));
+}
+
 //-- ## changePlayerColour(player, colour)
 //--
-//-- Change a player's colour slot. The current player colour can be read from the ```playerData``` array. Available colours
-//-- are green, orange, gray, black, red, blue, pink, cyan, yellow, purple, white, bright blue, neon green, infrared,
-//-- ultraviolet, and brown, represented by the integers 0 - 15 respectively.
+//-- Change a player's colour. The current player colour can be read from the ```playerData``` array.
 //--
-bool wzapi::changePlayerColour(WZAPI_PARAMS(int player, int colour))
+//-- The colour may be one of the 16 classic colour slots: green, orange, gray, black, red, blue, pink, cyan,
+//-- yellow, purple, white, bright blue, neon green, infrared, ultraviolet, and brown, represented by the
+//-- integers 0 - 15 respectively.
+//--
+//-- It may instead be an arbitrary colour, given as a hex string - either ```"#rrggbb"``` or the shorthand
+//-- ```"#rgb"``` (the leading ```#``` is optional). For example, ```changePlayerColour(1, "#ff8800")```. (4.6+ only)
+//--
+bool wzapi::changePlayerColour(WZAPI_PARAMS(int player, player_colour colour))
 {
-	return setPlayerColour(player, colour);
+	SCRIPT_ASSERT(false, context, colour.value >= 0, "Invalid colour - expected a colour slot (0 - 15) or a hex colour string");
+	return setPlayerColour(player, colour.value);
 }
 
 //-- ## setHealth(object, health)

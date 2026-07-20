@@ -167,7 +167,7 @@ static	UDWORD	auxVar; // dirty filthy hack - don't look for what this does.... /
 static	UDWORD	auxVarSec; // dirty filthy hack - don't look for what this does.... //FIXME
 static	UDWORD	specifiedSize;
 static	UDWORD	ellSpec;
-static	uint8_t	EffectForPlayer = 0;
+static	int32_t	EffectForPlayer = 0;
 // ----------------------------------------------------------------------------------------
 /* PROTOTYPES */
 
@@ -396,7 +396,9 @@ void addEffect(const Vector3i *pos, EFFECT_GROUP group, EFFECT_TYPE type, bool s
 
 	if (group == EFFECT_GRAVITON && (type == GRAVITON_TYPE_GIBLET || type == GRAVITON_TYPE_EMITTING_DR))
 	{
-		effect.frameNumber = lit;
+		// here lit is a player colour, used to pick the matching texture frame. A custom RGB
+		// colour has no frame of its own, so fall back to the first one.
+		effect.frameNumber = pal_IsRGBColour(lit) ? 0 : lit;
 	}
 	else
 	{

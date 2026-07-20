@@ -2714,7 +2714,17 @@ const char *getPlayerColourName(int player)
 		return "";
 	}
 
-	return gettext(playerColors[getPlayerColour(player)]);
+	int32_t colour = getPlayerColour(player);
+	if (pal_IsRGBColour(colour))
+	{
+		// a custom colour set by a script has no name - describe it by its hex value
+		static char customColorName[8];
+		ssprintf(customColorName, "#%06x", (unsigned)(colour & 0xFFFFFF));
+		return customColorName;
+	}
+	ASSERT_OR_RETURN("", colour >= 0 && colour < static_cast<int32_t>(ARRAY_SIZE(playerColors)), "Bad colour %d", (int)colour);
+
+	return gettext(playerColors[colour]);
 }
 
 bool shouldSkipReadyResetOnPlayerJoinLeaveEvent()

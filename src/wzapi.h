@@ -737,6 +737,15 @@ namespace wzapi
 		std::vector<std::string> strings;
 	};
 
+	/// A player colour, given either as one of the 16 classic colour slots or as a hex colour string.
+	struct player_colour
+	{
+		int32_t value = -1; ///< a colour slot, a packed RGB colour, or -1 if the script passed something invalid
+	};
+
+	/// Parses "#rrggbb" / "rrggbb" / "#rgb" / "rgb" into a packed RGB colour value. Returns -1 if malformed.
+	int32_t parseColourString(const std::string& colourString);
+
 	struct va_list_treat_as_strings
 	{
 		std::vector<std::string> strings;
@@ -1001,7 +1010,7 @@ namespace wzapi
 	bool removeSpotter(WZAPI_PARAMS(uint32_t spotterId));
 	bool syncRequest(WZAPI_PARAMS(int32_t req_id, int32_t x, int32_t y, optional<const BASE_OBJECT *> _psObj, optional<const BASE_OBJECT *> _psObj2));
 	bool replaceTexture(WZAPI_PARAMS(std::string oldFilename, std::string newFilename));
-	bool changePlayerColour(WZAPI_PARAMS(int player, int colour));
+	bool changePlayerColour(WZAPI_PARAMS(int player, player_colour colour));
 	bool setHealth(WZAPI_PARAMS(BASE_OBJECT* psObject, int health)); MULTIPLAY_SYNCREQUEST_REQUIRED
 	bool useSafetyTransport(WZAPI_PARAMS(bool flag));
 	bool restoreLimboMissionData(WZAPI_NO_PARAMS);

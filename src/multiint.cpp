@@ -722,9 +722,9 @@ public:
 			debug(LOG_ERROR, "Bad player");
 			return MapPlayerColorProvider::getPlayerColor(mapPlayer);
 		}
-		unsigned playerid = getPlayerColour(RemapPlayerNumber(player));
+		int32_t playerid = getPlayerColour(RemapPlayerNumber(player));
 		// kludge to fix black, so you can see it on some maps.
-		PIELIGHT color = playerid == 3? WZCOL_GREY : clanColours[playerid];
+		PIELIGHT color = playerid == 3? WZCOL_GREY : getClanColour(playerid);
 		return PIELIGHT_to_MapPreviewColor(color);
 	}
 private:

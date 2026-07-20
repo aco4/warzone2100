@@ -80,6 +80,11 @@ PIELIGHT pal_GetTeamColour(int team)
 {
 	PIELIGHT tcolour;
 
+	if (pal_IsRGBColour(team))
+	{
+		return pal_RGBColourToPIELIGHT(team);
+	}
+
 	// set correct team colour based on team
 	switch (team)
 	{

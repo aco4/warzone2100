@@ -144,6 +144,26 @@ static PIELIGHT flashColours[] =
 	{{254, 37, 37, 200}},   // Player F
 };
 
+PIELIGHT getClanColour(int32_t colour)
+{
+	if (pal_IsRGBColour(colour))
+	{
+		return pal_RGBColourToPIELIGHT(colour);
+	}
+	ASSERT_OR_RETURN(WZCOL_WHITE, colour >= 0 && colour < static_cast<int32_t>(ARRAY_SIZE(clanColours)), "Bad colour %d", (int)colour);
+	return clanColours[colour];
+}
+
+static PIELIGHT getFlashColour(int32_t colour)
+{
+	if (pal_IsRGBColour(colour))
+	{
+		return flashColours[0]; // the flash colour is the same for every slot
+	}
+	ASSERT_OR_RETURN(flashColours[0], colour >= 0 && colour < static_cast<int32_t>(ARRAY_SIZE(flashColours)), "Bad colour %d", (int)colour);
+	return flashColours[colour];
+}
+
 static size_t radarWidth, radarHeight, radarTexWidth, radarTexHeight;
 static SDWORD radarCenterX, radarCenterY;
 static uint8_t RadarZoom;
@@ -554,11 +574,11 @@ static void DrawRadarObjects(GameWorld& world)
 		{
 			//original 8-color mode
 			STATIC_ASSERT(MAX_PLAYERS <= ARRAY_SIZE(clanColours));
-			playerCol = clanColours[getPlayerColour(clan)];
+			playerCol = getClanColour(getPlayerColour(clan));
 		}
 
 		STATIC_ASSERT(MAX_PLAYERS <= ARRAY_SIZE(flashColours));
-		flashCol = flashColours[getPlayerColour(clan)];
+		flashCol = getFlashColour(getPlayerColour(clan));
 
 		/* Go through all droids */
 		for (const DROID* psDroid : world.objects.droids[clan])
@@ -627,9 +647,9 @@ static void DrawRadarObjects(GameWorld& world)
 			else
 			{
 				//original 8-color mode
-				playerCol = clanColours[getPlayerColour(clan)];
+				playerCol = getClanColour(getPlayerColour(clan));
 			}
-			flashCol = flashColours[getPlayerColour(clan)];
+			flashCol = getFlashColour(getPlayerColour(clan));
 
 			if (psStruct->visibleForLocalDisplay()
 			    || (bMultiPlayer && alliancesSharedVision(game.alliance)

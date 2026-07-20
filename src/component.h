@@ -33,8 +33,8 @@ struct iIMDShape;
 	Pumpkin Studios, EIDOS Interactive.
 */
 
-bool setPlayerColour(UDWORD player, UDWORD col);
-UBYTE getPlayerColour(UDWORD pl);
+bool setPlayerColour(UDWORD player, int32_t col);
+int32_t getPlayerColour(UDWORD pl);
 
 UDWORD getComponentDroidRadius(const DROID *psDroid);
 UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *psDroid);
@@ -77,7 +77,7 @@ void compPersonToBits(DROID *psDroid, Vector3f &velocity);
 SDWORD rescaleButtonObject(SDWORD radius, SDWORD baseScale, SDWORD baseRadius);
 void destroyFXDroid(DROID *psDroid, unsigned impactTime, Vector3f &velocity);
 
-void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *flashImd, PIELIGHT buildingBrightness, int pieFlag, int pieFlagData, glm::mat4 modelMatrix, const glm::mat4 &viewMatrix, float heightAboveTerrain, UBYTE colour = 0);
+void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *flashImd, PIELIGHT buildingBrightness, int pieFlag, int pieFlagData, glm::mat4 modelMatrix, const glm::mat4 &viewMatrix, float heightAboveTerrain, int32_t colour = 0);
 
 /* Pass in the stats you're interested in and the COMPONENT - double reference, but works. NOTE: Unused!*/
 #define PART_IMD(STATS,DROID,COMPONENT,PLAYER)	(STATS[DROID->asBits[COMPONENT]].pIMD)

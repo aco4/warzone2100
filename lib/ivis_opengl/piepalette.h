@@ -152,4 +152,24 @@ static inline PIELIGHT WZ_DECL_PURE pal_RGBA(UBYTE r, UBYTE g, UBYTE b, UBYTE a)
 	return { r, g, b, a };
 }
 
+/** A player colour is normally one of the 16 classic colour slots (0 - 15), but it may instead
+ *  carry an arbitrary 24-bit RGB value, tagged with this flag. Anything that turns a colour
+ *  value into a PIELIGHT must handle both forms - see pal_GetTeamColour(). */
+#define PAL_RGB_COLOUR_FLAG 0x01000000
+
+static inline bool WZ_DECL_PURE pal_IsRGBColour(int32_t colour)
+{
+	return (colour & PAL_RGB_COLOUR_FLAG) != 0;
+}
+
+static inline int32_t WZ_DECL_PURE pal_MakeRGBColour(UBYTE r, UBYTE g, UBYTE b)
+{
+	return PAL_RGB_COLOUR_FLAG | (static_cast<int32_t>(r) << 16) | (static_cast<int32_t>(g) << 8) | static_cast<int32_t>(b);
+}
+
+static inline PIELIGHT WZ_DECL_PURE pal_RGBColourToPIELIGHT(int32_t colour)
+{
+	return pal_Colour((colour >> 16) & 0xFF, (colour >> 8) & 0xFF, colour & 0xFF);
+}
+
 #endif

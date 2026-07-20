@@ -266,9 +266,14 @@ looks, or to add variety to the looks of droids in campaign missions. (3.2+ only
 
 ## changePlayerColour(player, colour)
 
-Change a player's colour slot. The current player colour can be read from the ```playerData``` array. Available colours
-are green, orange, gray, black, red, blue, pink, cyan, yellow, purple, white, bright blue, neon green, infrared,
-ultraviolet, and brown, represented by the integers 0 - 15 respectively.
+Change a player's colour. The current player colour can be read from the ```playerData``` array.
+
+The colour may be one of the 16 classic colour slots: green, orange, gray, black, red, blue, pink, cyan,
+yellow, purple, white, bright blue, neon green, infrared, ultraviolet, and brown, represented by the
+integers 0 - 15 respectively.
+
+It may instead be an arbitrary colour, given as a hex string - either ```"#rrggbb"``` or the shorthand
+```"#rgb"``` (the leading ```#``` is optional). For example, ```changePlayerColour(1, "#ff8800")```. (4.6+ only)
 
 ## setHealth(object, health)
 

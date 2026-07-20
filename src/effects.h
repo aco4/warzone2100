@@ -138,7 +138,7 @@ struct EFFECT
 	uint16_t     frameDelay = 0;              // how many game ticks between each frame?
 	uint16_t     lifeSpan = 0;                // what is it's life expectancy?
 	uint16_t     radius = 0;                  // Used for area effects
-	uint8_t      player = MAX_PLAYERS;        // when the effect in question needs a player's color
+	int32_t      player = MAX_PLAYERS;        // when the effect in question needs a player's color
 	uint8_t      control = 0;                 // Controls the bits above - essential,flips etc
 	uint8_t      frameNumber = 0;             // what frame number is the imd on?
 	uint8_t      baseScale = 0;               // if scaled, what's bottom line?

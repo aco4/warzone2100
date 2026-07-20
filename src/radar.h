@@ -72,6 +72,9 @@ bool isRadarDragging();
 
 extern PIELIGHT clanColours[];
 
+/** Minimap colour for a player colour value - handles both classic slots and packed RGB colours. */
+PIELIGHT getClanColour(int32_t colour);
+
 /** @} */
 
 #endif // __INCLUDED_SRC_RADAR_H__
