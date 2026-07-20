@@ -607,21 +607,39 @@ static bool actionRemoveDroidsFromBuildPos(unsigned player, Vector2i pos, uint16
 		// TODO If the action code was less convoluted, it would be possible for the droid should drive away instead of just getting moved away.
 		Vector2i bestDest(0, 0);  // Dummy initialisation.
 		unsigned bestDist = UINT32_MAX;
+		bool bestIsCorner = true;
 		for (int y = -1; y <= b.size.y; ++y)
 			for (int x = -1; x <= b.size.x; x += y >= 0 && y < b.size.y ? b.size.x + 1 : 1)
 			{
 				Vector2i dest = world_coord(b.map + Vector2i(x, y)) + Vector2i(TILE_UNITS, TILE_UNITS) / 2;
 				unsigned dist = iHypot(droid->pos.xy() - dest);
-				if (dist < bestDist && !fpathBlockingTile(gameWorld.map, map_coord(dest.x), map_coord(dest.y), droid->getPropulsionStats()->propulsionType))
+				// Is dest a corner?
+				bool isCorner = (x == -1 || x == b.size.x) && (y == -1 || y == b.size.y);
+				// Is dest better than bestDest? (Prefer non-corners; otherwise pick closest.)
+				bool better = isCorner == bestIsCorner ? dist < bestDist : !isCorner;
+				if (better && !fpathBlockingTile(gameWorld.map, map_coord(dest.x), map_coord(dest.y), droid->getPropulsionStats()->propulsionType))
 				{
 					bestDest = dest;
 					bestDist = dist;
+					bestIsCorner = isCorner;
 				}
 			}
 		if (bestDist != UINT32_MAX)
 		{
 			// Push the droid out of the way.
+			auto blocked = [droid](Vector2i p) {
+				return fpathBlockingTile(gameWorld.map, map_coord(p.x), map_coord(p.y), droid->getPropulsionStats()->propulsionType);
+			};
 			Vector2i newPos = droid->pos.xy() + iSinCosR(iAtan2(bestDest - droid->pos.xy()), gameTimeAdjustedIncrement(TILE_UNITS));
+			if (blocked(newPos))
+			{
+				// Slide along whichever axis stays on passable ground, keeping
+				// the droid clear until it can cross cleanly into the free
+				// destination tile.
+				Vector2i slideX(newPos.x, droid->pos.y);
+				Vector2i slideY(droid->pos.x, newPos.y);
+				newPos = !blocked(slideX) ? slideX : !blocked(slideY) ? slideY : droid->pos.xy();
+			}
 			droidSetPosition(droid, gameWorld.map, newPos.x, newPos.y);
 		}
 	}
