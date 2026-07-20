@@ -20,6 +20,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <algorithm>
 #include "lib/framework/frame.h"
 #include "lib/framework/frameresource.h"
 #include "lib/ivis_opengl/imd.h"
@@ -145,7 +146,14 @@ const iIMDBaseShape	*getRandomDebrisImd()
 }
 // -------------------------------------------------------------------------------
 
-iIMDBaseShape	*pAssemblyPointIMDs[NUM_FLAG_TYPES][MAX_FACTORY_FLAG_IMDS];
+iIMDBaseShape	*pAssemblyPointIMDs[NUM_FLAG_TYPES][MAX_FACTORY_FLAG_IMDS + 1];
+
+iIMDBaseShape *getAssemblyPointIMD(unsigned flagType, unsigned factoryInc)
+{
+	ASSERT_OR_RETURN(nullptr, flagType < NUM_FLAG_TYPES, "Invalid flag type %u", flagType);
+	// Slot MAX_FACTORY_FLAG_IMDS holds an unnumbered pad, for factories past the last numbered graphic.
+	return pAssemblyPointIMDs[flagType][std::min<unsigned>(factoryInc, MAX_FACTORY_FLAG_IMDS)];
+}
 
 static bool initMiscImd(unsigned i, unsigned n, const char *nameFormat, unsigned flagType)
 {
@@ -179,6 +187,17 @@ bool	initMiscImds()
 		{
 			return false;
 		}
+	}
+
+	/* Unnumbered pads, for factories past the last numbered graphic. Repair facilities
+	 * are never numbered, so they just reuse their regular graphic. */
+	const unsigned blank = MAX_FACTORY_FLAG_IMDS;
+	if (!initMiscImd(blank, 0, "minumblank.pie",  FACTORY_FLAG) ||
+	    !initMiscImd(blank, 0, "micnumblank.pie", CYBORG_FLAG) ||
+	    !initMiscImd(blank, 0, "mivnumblank.pie", VTOL_FLAG) ||
+	    !initMiscImd(blank, 1, "mirnum%u.pie",    REPAIR_FLAG))
+	{
+		return false;
 	}
 	return (true);
 }

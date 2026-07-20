@@ -50,7 +50,10 @@ extern iIMDShape	*droidDamageImd;
 extern iIMDShape	*smallSteamImd;
 extern iIMDShape	*plasmaImd;
 #define MAX_FACTORY_FLAG_IMDS 32
-extern iIMDBaseShape	*pAssemblyPointIMDs[NUM_FLAG_TYPES][MAX_FACTORY_FLAG_IMDS];
+extern iIMDBaseShape	*pAssemblyPointIMDs[NUM_FLAG_TYPES][MAX_FACTORY_FLAG_IMDS + 1];
+/// Returns the assembly point graphic for a delivery point, falling back to an
+/// unnumbered pad for factories past the last numbered graphic.
+iIMDBaseShape	*getAssemblyPointIMD(unsigned flagType, unsigned factoryInc);
 extern iIMDShape	*blipImd;
 extern iIMDShape	*shadowImd;
 extern iIMDShape	*transporterShadowImd;
