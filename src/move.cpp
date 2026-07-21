@@ -1140,12 +1140,26 @@ static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, ui
 
 		if (bJumped)
 		{
-			psDroid->pos.x = MAX(0, jumpx);
-			psDroid->pos.y = MAX(0, jumpy);
-			*pmx = 0;
-			*pmy = 0;
+			// The two branches above each deflect based on only one orthogonal neighbour, so when
+			// both fire at once (blocked on two sides, e.g. boxed into a corner of blocked tiles)
+			// they combine into a diagonal jump whose destination -- the corner tile -- was never
+			// itself checked. Landing on a blocked corner just wedges the droid somewhere else
+			// instead of freeing it, so verify before committing to the jump.
+			int32_t finalX = MAX(0, jumpx);
+			int32_t finalY = MAX(0, jumpy);
+			if (fpathBlockingTile(gameWorld.map, map_coord(finalX), map_coord(finalY), propulsion))
+			{
+				bJumped = false;
+			}
+			else
+			{
+				psDroid->pos.x = finalX;
+				psDroid->pos.y = finalY;
+				*pmx = 0;
+				*pmy = 0;
+			}
 		}
-		else
+		if (!bJumped)
 		{
 			moveCalcSlideVector(psDroid, blkCX, blkCY, pmx, pmy);
 		}
