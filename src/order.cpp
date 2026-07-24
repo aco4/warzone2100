@@ -886,7 +886,7 @@ bool orderUpdateDroid(DROID *psDroid)
 			// only place it can be trapped - in multiPlayer can only put cyborgs onto a Cyborg Transporter
 			DROID *temp = (DROID *)psDroid->order.psObj;	// NOTE: It is possible to have a NULL here
 
-			if (temp && temp->droidType == DROID_TRANSPORTER && !psDroid->isCyborg())
+			if (temp && temp->isTransporter() && !transporterAcceptsDroidType(temp, psDroid))
 			{
 				psDroid->order = DroidOrder(DORDER_NONE);
 				actionDroid(psDroid, DACTION_NONE);
@@ -917,6 +917,15 @@ bool orderUpdateDroid(DROID *psDroid)
 					// save the target of current droid (the transporter)
 					DROID *transporter = (DROID *)psDroid->order.psObj;
 
+					/* The game may only revise an embark target that the game itself chose:
+					   a transporter the player named is an instruction, not a suggestion.
+					   DSS_RTL_TRANSPORT is set only by the auto-targeted paths, and any
+					   explicit primary order clears it again (see orderDroidBase()).
+					   Read it *before* the secondarySetState() below - under bMultiMessages
+					   that call only queues the change, so whether the bit is still visible
+					   afterwards would depend on net timing. */
+					const bool mayRedirect = (psDroid->secondaryOrder & DSS_RTL_MASK) == DSS_RTL_TRANSPORT;
+
 					// Make sure that it really is a valid droid
 					CHECK_DROID(transporter);
 
@@ -933,7 +942,10 @@ bool orderUpdateDroid(DROID *psDroid)
 					/* We must add the droid to the transporter only *after*
 					* processing changing its orders (see above).
 					*/
-					transporterAddDroid(transporter, psDroid);
+					if (!(mayRedirect && transporterRedirectIfFull(transporter, psDroid)))
+					{
+						transporterAddDroid(transporter, psDroid);
+					}
 				}
 				else if (psDroid->action == DACTION_NONE)
 				{
@@ -3011,14 +3023,25 @@ void orderSelectedStatsTwoLocDir(UDWORD player, DROID_ORDER order, STRUCTURE_STA
 /** This function runs though all player's droids to check if any of then is a transporter. Returns the transporter droid if any was found, and NULL else.*/
 DROID *FindATransporter(DROID const *embarkee)
 {
-	const bool isCyborg = embarkee->isCyborg();
+	if (bMultiPlayer)
+	{
+		/* Prefer a transporter that embarkee can actually reach and that will still have room
+		   for it once the droids already on their way have boarded. No range limit: asking to
+		   go to a transport is an explicit request, so walking a long way is intended. */
+		if (DROID *psBest = transporterFindBestForEmbark(embarkee))
+		{
+			return psBest;
+		}
+	}
 
+	/* Fall back on the nearest transporter of a usable type, full or not, so that a droid with
+	   nowhere good to go still walks towards something instead of being left standing. */
 	DROID *bestDroid = nullptr;
 	unsigned bestDist = ~0u;
 
 	for (DROID *psDroid : gameWorld.objects.droids[embarkee->player])
 	{
-		if ((isCyborg && psDroid->droidType == DROID_TRANSPORTER) || psDroid->droidType == DROID_SUPERTRANSPORTER)
+		if (transporterAcceptsDroidType(psDroid, embarkee))
 		{
 			unsigned dist = iHypot((psDroid->pos - embarkee->pos).xy());
 			if (!checkTransporterSpace(psDroid, embarkee, false))

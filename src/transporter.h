@@ -26,6 +26,8 @@
 
 #include "lib/widget/widget.h"
 
+#include <cstdint>
+
 #define IDTRANS_FORM			9000	//The Transporter base form
 #define IDTRANS_CONTENTFORM		9003	//The Transporter Contents form
 #define IDTRANS_DROIDS			9006	//The Droid base form
@@ -55,6 +57,33 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd);
 void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode);
 /*check to see if the droid can fit on the Transporter - return true if fits*/
 bool checkTransporterSpace(DROID const *psTransporter, DROID const *psAssigned, bool mayFlash = true);
+
+/**
+ * True if psDroid's body type is allowed on this class of transporter: a DROID_TRANSPORTER
+ * (cyborg transporter) only accepts cyborgs, a DROID_SUPERTRANSPORTER accepts anything.
+ * This is a type-compatibility test only - it says nothing about remaining space.
+ */
+bool transporterAcceptsDroidType(DROID const *psTransporter, DROID const *psDroid);
+
+/**
+ * Picks the best transporter for psDroid to embark on, from psDroid's own player.
+ * Considers only live, non-flying transporters with planned space remaining, where "planned"
+ * subtracts droids already holding a DORDER_EMBARK order on that transporter.
+ * Scored by reachable path distance from psDroid; maxSqDist caps the straight-line distance
+ * considered. Returns nullptr if nothing qualifies.
+ * Reads only synchronized game state - safe to call on every client.
+ */
+DROID *transporterFindBestForEmbark(DROID const *psDroid, int maxSqDist = INT32_MAX);
+
+/**
+ * If psTransporter has no room for psDroidToAdd, order psDroidToAdd to embark on the best
+ * nearby transporter instead, and return true. Returns false if there is room, or if no
+ * suitable alternative exists - the caller should then proceed with transporterAddDroid().
+ * Only the game's own embark targets may be overridden this way, so it is up to the caller
+ * to establish that the player did not pick psTransporter explicitly. Multiplayer only.
+ */
+bool transporterRedirectIfFull(DROID const *psTransporter, DROID *psDroidToAdd);
+
 /*calculates how much space is remaining on the transporter - allows droids to take
 up different amount depending on their body size - currently all are set to one!*/
 int calcRemainingCapacity(const DROID *psTransporter);
