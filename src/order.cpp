@@ -920,30 +920,33 @@ bool orderUpdateDroid(DROID *psDroid)
 					/* The game may only revise an embark target that the game itself chose:
 					   a transporter the player named is an instruction, not a suggestion.
 					   DSS_RTL_TRANSPORT is set only by the auto-targeted paths, and any
-					   explicit primary order clears it again (see orderDroidBase()).
-					   Read it *before* the secondarySetState() below - under bMultiMessages
-					   that call only queues the change, so whether the bit is still visible
-					   afterwards would depend on net timing. */
+					   explicit primary order clears it again (see orderDroidBase()). */
 					const bool mayRedirect = (psDroid->secondaryOrder & DSS_RTL_MASK) == DSS_RTL_TRANSPORT;
 
 					// Make sure that it really is a valid droid
 					CHECK_DROID(transporter);
 
-					// order the droid to stop so moveUpdateDroid does not process this unit
-					orderDroid(psDroid, DORDER_STOP, ModeImmediate);
-					setDroidTarget(psDroid, nullptr);
-					psDroid->order.psObj = nullptr;
-					secondarySetState(psDroid, gameWorld.objects, DSO_RETURN_TO_LOC, DSS_NONE);
-					moveReallyStopDroid(psDroid);
-
-					// Fire off embark event
-					triggerEvent(TRIGGER_TRANSPORTER_EMBARKED, transporter);
-
-					/* We must add the droid to the transporter only *after*
-					* processing changing its orders (see above).
-					*/
-					if (!(mayRedirect && transporterRedirectIfFull(transporter, psDroid)))
+					/* If the transporter turned out to be full, walk on to a different one
+					   rather than boarding. That only repoints the embark order this droid is
+					   already under, so none of the teardown below applies: it is still on its
+					   way to a transporter, and keeps the order, the movement and the
+					   DSS_RTL_TRANSPORT state that got it here. */
+					const bool retargeted = mayRedirect && transporterRetargetIfFull(psDroid);
+					if (!retargeted)
 					{
+						// order the droid to stop so moveUpdateDroid does not process this unit
+						orderDroid(psDroid, DORDER_STOP, ModeImmediate);
+						setDroidTarget(psDroid, nullptr);
+						psDroid->order.psObj = nullptr;
+						secondarySetState(psDroid, gameWorld.objects, DSO_RETURN_TO_LOC, DSS_NONE);
+						moveReallyStopDroid(psDroid);
+
+						// Fire off embark event
+						triggerEvent(TRIGGER_TRANSPORTER_EMBARKED, transporter);
+
+						/* We must add the droid to the transporter only *after*
+						* processing changing its orders (see above).
+						*/
 						transporterAddDroid(transporter, psDroid);
 					}
 				}
@@ -3026,8 +3029,7 @@ DROID *FindATransporter(DROID const *embarkee)
 	if (bMultiPlayer)
 	{
 		/* Prefer a transporter that embarkee can actually reach and that will still have room
-		   for it once the droids already on their way have boarded. No range limit: asking to
-		   go to a transport is an explicit request, so walking a long way is intended. */
+		   for it once the droids already on their way have boarded. */
 		if (DROID *psBest = transporterFindBestForEmbark(embarkee))
 		{
 			return psBest;
