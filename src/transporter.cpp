@@ -1038,98 +1038,98 @@ bool transporterAcceptsDroidType(DROID const *psTransporter, DROID const *psDroi
 
 namespace
 {
-	struct EmbarkCandidate
+	// Sync-safe integer hash for HRW (rendezvous) weighting of (droid, transporter) pairs.
+	// A splitmix64/murmur3-style fmix finalizer: integer-only and platform-independent, so
+	// host and clients compute the same value (no std::hash, no floating point). The result
+	// is forced nonzero so a zero-distance candidate still resolves strictly in the HRW
+	// cross-multiply (its opponent's cross term is 0 -> it must win, not degenerate to a tie).
+	uint32_t embarkHash(uint32_t droidId, uint32_t transporterId)
 	{
-		DROID *psTransporter;
-		int reserved;  // Space claimed by droids that are already on their way here
-	};
-
-	struct EmbarkReservation
-	{
-		BASE_OBJECT const *psTarget;
-		int space;
-	};
+		uint64_t x = ((uint64_t)droidId << 32) | (uint64_t)transporterId;
+		x ^= x >> 30;
+		x *= 0xbf58476d1ce4e5b9ULL;
+		x ^= x >> 27;
+		x *= 0x94d049bb133111ebULL;
+		x ^= x >> 31;
+		uint32_t h = (uint32_t)(x >> 32) ^ (uint32_t)x;
+		return h != 0 ? h : 1u;  // force nonzero
+	}
 }
 
-// Intelligently decide the transporter to embark, or nullptr if none
+// Intelligently decide the transporter to embark, or nullptr if none is in range.
+//
+// Multiplayer-only (FindATransporter only calls this under bMultiPlayer). Candidate
+// discovery uses the maintained mapgrid embark filter (a radius-bounded grid query) instead
+// of a full droid-list scan. Among candidates that pass a hard, ground-truth capacity gate,
+// the winner is chosen by deterministic HRW (rendezvous) hashing:
+// argmax( embarkHash(droid.id, transporter.id) / droidSqDist ). The hash disperses droids
+// across near-equidistant transporters; the distance term keeps the pick local. This reads
+// no other droid's orders (no reservation pass), so it is O(T) per droid.
+//
+// Residual over-assignment (a droid picking a transporter that fills before it arrives) is
+// corrected by the multiplayer arrival-time heal in order.cpp, which re-checks ground-truth
+// capacity and retargets via orderRetargetEmbark. Returning nullptr (no in-radius candidate
+// qualifies) transparently yields FindATransporter's global iHypot fallback.
 DROID *transporterFindBestForEmbark(DROID const *psDroid)
 {
 	ASSERT_OR_RETURN(nullptr, psDroid != nullptr, "Invalid droid pointer");
 	ASSERT_OR_RETURN(nullptr, psDroid->player < MAX_PLAYERS, "Bad player %d", (int)psDroid->player);
 
-	// static to save allocations
-	static std::vector<EmbarkCandidate> vCandidates;
-	static std::vector<EmbarkReservation> vReservations;
-	// clear vectors from previous invocations
-	vCandidates.clear();
-	vReservations.clear();
-
-	// Walk the droid list once
-	for (DROID *psCurr : gameWorld.objects.droids[psDroid->player])
-	{
-		if (isDead(psCurr))
-		{
-			continue;
-		}
-		// Collect candidate transporters
-		// Cheap tests only
-		if (psCurr != psDroid && psCurr->isTransporter() && psCurr->psGroup != nullptr
-		    && !transporterFlying(psCurr) && transporterAcceptsDroidType(psCurr, psDroid))
-		{
-			vCandidates.push_back({psCurr, 0});
-		}
-		// Collect reservations
-		// Skip psDroid; its own pending order should not count against it
-		if (psCurr != psDroid && psCurr->order.type == DORDER_EMBARK && psCurr->order.psObj != nullptr)
-		{
-			vReservations.push_back({psCurr->order.psObj, transporterSpaceRequired(psCurr)});
-		}
-	}
-
-	// Calculate how much space is reserved in each target.
-	// Separate from the loop above because a reserving droid can appear in the
-	// droid list before its target
-	for (EmbarkReservation const &reservation : vReservations)
-	{
-		for (EmbarkCandidate &candidate : vCandidates)
-		{
-			// Reservations on anything that is not a candidate (filtered out
-			// above, or another player's transporter) are simply dropped.
-			if (candidate.psTransporter == reservation.psTarget)
-			{
-				candidate.reserved += reservation.space;
-				break;
-			}
-		}
-	}
+	// Embark happens near base, so a generous fixed radius covers a base cluster. This is a
+	// pure performance knob: FindATransporter falls back to a global scan when this returns
+	// nullptr, so correctness holds for any value. Tunable.
+	const uint32_t EMBARK_SEARCH_RADIUS = 64 * TILE_UNITS;
 
 	const int spaceNeeded = transporterSpaceRequired(psDroid);
 	DROID *psBest = nullptr;
-	int bestDist = INT32_MAX;
-	for (EmbarkCandidate const &candidate : vCandidates)
+	uint32_t bestHash = 0;
+	int bestDist = 0;
+
+	for (BASE_OBJECT *psObj : gridStartIterateEmbarkTransporters(psDroid->pos.x, psDroid->pos.y, EMBARK_SEARCH_RADIUS, psDroid->player))
 	{
-		// Skip transporters that are full or completely reserved
-		if (calcRemainingCapacity(candidate.psTransporter) - candidate.reserved < spaceNeeded)
+		DROID *psCurr = (DROID *)psObj;  // Filter guarantees OBJ_DROID.
+		if (psCurr == psDroid)
+		{
+			continue;  // A transporter ordered to embark can't board itself.
+		}
+		// Droid-dependent check, deliberately left out of the maintained filter.
+		if (!transporterAcceptsDroidType(psCurr, psDroid))
+		{
+			continue;
+		}
+		// Hard, ground-truth capacity gate (no reservations).
+		if (calcRemainingCapacity(psCurr) < spaceNeeded)
+		{
+			continue;
+		}
+		// Squared straight-line distance; skip unreachable transporters (fpathCheck failed).
+		const int sqDist = droidSqDist(psDroid, psCurr);
+		if (sqDist < 0)
 		{
 			continue;
 		}
 
-		// Rank by squared straight-line distance from psDroid
-		const int dist = droidSqDist(psDroid, candidate.psTransporter);
+		const uint32_t hash = embarkHash(psDroid->id, psCurr->id);
 
-		// Skip unreachable transporters
-		if (dist < 0)
+		// HRW pick: maximise hash / sqDist, compared by integer cross-multiplication to stay
+		// float-free and MP-deterministic (uint64_t suffices: hash < 2^32, sqDist < 2^31, so
+		// each product < 2^63). Order-independent full compare; tie-break on transporter id.
+		bool better;
+		if (psBest == nullptr)
 		{
-			continue;
+			better = true;
 		}
-
-		// Pick closest transporter
-		// Break ties on id
-		if (psBest == nullptr || dist < bestDist
-		    || (dist == bestDist && candidate.psTransporter->id < psBest->id))
+		else
 		{
-			psBest = candidate.psTransporter;
-			bestDist = dist;
+			const uint64_t lhs = (uint64_t)hash * (uint64_t)bestDist;
+			const uint64_t rhs = (uint64_t)bestHash * (uint64_t)sqDist;
+			better = (lhs > rhs) || (lhs == rhs && psCurr->id < psBest->id);
+		}
+		if (better)
+		{
+			psBest = psCurr;
+			bestHash = hash;
+			bestDist = sqDist;
 		}
 	}
 

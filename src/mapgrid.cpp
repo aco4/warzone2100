@@ -31,12 +31,14 @@
 #include "mapgrid.h"
 #include "pointtree.h"
 #include "game_world.h"
+#include "transporter.h"
 
 
 static PointTree *gridPointTree = nullptr;  // A quad-tree-like object.
 static PointTree::Filter *gridFiltersUnseen;
 static PointTree::Filter *gridFiltersDroidsByPlayer;
 static PointTree::Filter *gridFiltersDroidsRepairCandidates;
+static PointTree::Filter *gridFiltersEmbarkTransporters;
 
 // initialise the grid system
 bool gridInitialise()
@@ -46,6 +48,7 @@ bool gridInitialise()
 	gridFiltersUnseen = new PointTree::Filter[MAX_PLAYERS];
 	gridFiltersDroidsByPlayer = new PointTree::Filter[MAX_PLAYERS];
 	gridFiltersDroidsRepairCandidates = new PointTree::Filter[MAX_PLAYERS];
+	gridFiltersEmbarkTransporters = new PointTree::Filter[MAX_PLAYERS];
 
 	return true;  // Yay, nothing failed!
 }
@@ -100,6 +103,7 @@ void gridReset(GameWorld& world)
 		gridFiltersUnseen[player].reset(*gridPointTree);
 		gridFiltersDroidsByPlayer[player].reset(*gridPointTree);
 		gridFiltersDroidsRepairCandidates[player].reset(*gridPointTree);
+		gridFiltersEmbarkTransporters[player].reset(*gridPointTree);
 	}
 }
 
@@ -112,6 +116,10 @@ void gridShutDown()
 	gridFiltersUnseen = nullptr;
 	delete[] gridFiltersDroidsByPlayer;
 	gridFiltersDroidsByPlayer = nullptr;
+	delete[] gridFiltersDroidsRepairCandidates;
+	gridFiltersDroidsRepairCandidates = nullptr;
+	delete[] gridFiltersEmbarkTransporters;
+	gridFiltersEmbarkTransporters = nullptr;
 }
 
 static bool isInRadius(int32_t x, int32_t y, uint32_t radius)
@@ -228,6 +236,27 @@ struct ConditionDroidCandidateForRepair
 GridList const &gridStartIterateRepairCandidates(int32_t x, int32_t y, uint32_t radius, int player)
 {
 	return gridStartIterateFiltered(x, y, radius, &gridFiltersDroidsRepairCandidates[player], ConditionDroidCandidateForRepair(player));
+}
+
+struct ConditionEmbarkTransporter
+{
+	ConditionEmbarkTransporter(int32_t player_) : player(player_) {}
+	bool test(BASE_OBJECT *obj) const
+	{
+		if (obj->type != OBJ_DROID || obj->player != player) return false;
+		const DROID *psDroid = (const DROID*) obj;
+		// Only the droid-independent, cheap tests belong in the maintained filter.
+		// transporterAcceptsDroidType() depends on the embarking droid, so it must be
+		// applied at the call site instead of here.
+		return !psDroid->died && psDroid->isTransporter() && psDroid->psGroup != nullptr
+		       && !transporterFlying(psDroid);
+	}
+	int player;
+};
+
+GridList const &gridStartIterateEmbarkTransporters(int32_t x, int32_t y, uint32_t radius, int player)
+{
+	return gridStartIterateFiltered(x, y, radius, &gridFiltersEmbarkTransporters[player], ConditionEmbarkTransporter(player));
 }
 
 struct ConditionUnseen
