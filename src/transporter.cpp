@@ -1019,7 +1019,7 @@ static void intTransporterAddDroid(UDWORD id)
 	}
 }
 
-/*is this class of transporter willing to carry this class of droid?*/
+// Can this type of transporter carry this type of droid?
 bool transporterAcceptsDroidType(DROID const *psTransporter, DROID const *psDroid)
 {
 	ASSERT_OR_RETURN(false, psTransporter != nullptr, "Invalid transporter pointer");
@@ -1041,7 +1041,7 @@ namespace
 	struct EmbarkCandidate
 	{
 		DROID *psTransporter;
-		int reserved;  ///< Space claimed by droids that are already on their way here.
+		int reserved;  // Space claimed by droids that are already on their way here
 	};
 
 	struct EmbarkReservation
@@ -1051,51 +1051,50 @@ namespace
 	};
 }
 
-/*picks the transporter psDroid should embark on - see transporter.h*/
+// Intelligently decide the transporter to embark, or nullptr if none
 DROID *transporterFindBestForEmbark(DROID const *psDroid)
 {
 	ASSERT_OR_RETURN(nullptr, psDroid != nullptr, "Invalid droid pointer");
 	ASSERT_OR_RETURN(nullptr, psDroid->player < MAX_PLAYERS, "Bad player %d", (int)psDroid->player);
 
-	// static to save allocations (see decideWhereToRepairAndBalance)
+	// static to save allocations
 	static std::vector<EmbarkCandidate> vCandidates;
 	static std::vector<EmbarkReservation> vReservations;
 	// clear vectors from previous invocations
 	vCandidates.clear();
 	vReservations.clear();
 
-	/* Walking the droid list is the dominant cost here, so do it once and collect both the
-	   candidate transporters and the embark orders that have already claimed space on one of
-	   them. A reserving droid may appear in the list before its target does, so the claims
-	   cannot be applied in place and are resolved in a second pass over the (short) claim list
-	   rather than over the droid list again. */
+	// Walk the droid list once
 	for (DROID *psCurr : gameWorld.objects.droids[psDroid->player])
 	{
 		if (isDead(psCurr))
 		{
 			continue;
 		}
-		// Cheap tests only; droidSqDist is left to the final pass so it is only paid for
-		// transporters that still have room.
+		// Collect candidate transporters
+		// Cheap tests only
 		if (psCurr != psDroid && psCurr->isTransporter() && psCurr->psGroup != nullptr
 		    && !transporterFlying(psCurr) && transporterAcceptsDroidType(psCurr, psDroid))
 		{
 			vCandidates.push_back({psCurr, 0});
 		}
-		// A separate test, not an else - the two are independent. Skipping psDroid keeps its
-		// own pending order from counting against it.
+		// Collect reservations
+		// Skip psDroid; its own pending order should not count against it
 		if (psCurr != psDroid && psCurr->order.type == DORDER_EMBARK && psCurr->order.psObj != nullptr)
 		{
 			vReservations.push_back({psCurr->order.psObj, transporterSpaceRequired(psCurr)});
 		}
 	}
 
+	// Calculate how much space is reserved in each target.
+	// Separate from the loop above because a reserving droid can appear in the
+	// droid list before its target
 	for (EmbarkReservation const &reservation : vReservations)
 	{
 		for (EmbarkCandidate &candidate : vCandidates)
 		{
-			// Claims on anything that is not a candidate (filtered out above, or another
-			// player's transporter) are simply dropped.
+			// Reservations on anything that is not a candidate (filtered out
+			// above, or another player's transporter) are simply dropped.
 			if (candidate.psTransporter == reservation.psTarget)
 			{
 				candidate.reserved += reservation.space;
@@ -1109,16 +1108,23 @@ DROID *transporterFindBestForEmbark(DROID const *psDroid)
 	int bestDist = INT32_MAX;
 	for (EmbarkCandidate const &candidate : vCandidates)
 	{
+		// Skip transporters that are full or completely reserved
 		if (calcRemainingCapacity(candidate.psTransporter) - candidate.reserved < spaceNeeded)
 		{
-			continue;  // no room once the droids already heading there have boarded
+			continue;
 		}
+
+		// Rank by squared straight-line distance from psDroid
 		const int dist = droidSqDist(psDroid, candidate.psTransporter);
+
+		// Skip unreachable transporters
 		if (dist < 0)
 		{
-			continue;  // cannot reach it - droidSqDist() signals that with -1
+			continue;
 		}
-		// Break ties on id so that every client agrees on the choice.
+
+		// Pick closest transporter
+		// Break ties on id
 		if (psBest == nullptr || dist < bestDist
 		    || (dist == bestDist && candidate.psTransporter->id < psBest->id))
 		{
@@ -1128,40 +1134,6 @@ DROID *transporterFindBestForEmbark(DROID const *psDroid)
 	}
 
 	return psBest;
-}
-
-/*points psDroid's embark order at a different transporter if its own is full - see transporter.h*/
-bool transporterRetargetIfFull(DROID *psDroid)
-{
-	ASSERT_OR_RETURN(false, psDroid != nullptr, "Invalid droid pointer");
-	ASSERT_OR_RETURN(false, psDroid->order.type == DORDER_EMBARK, "Droid %d is not embarking", (int)psDroid->id);
-
-	DROID *psTransporter = castDroid(psDroid->order.psObj);
-	ASSERT_OR_RETURN(false, psTransporter != nullptr, "Embark order of droid %d has no transporter", (int)psDroid->id);
-
-	if (!bMultiPlayer || checkTransporterSpace(psTransporter, psDroid, /*mayFlash=*/false))
-	{
-		return false;
-	}
-	// psTransporter excludes itself: it is full, so it has no planned space left.
-	DROID *psAlternate = transporterFindBestForEmbark(psDroid);
-	if (psAlternate == nullptr)
-	{
-		return false;
-	}
-
-	/* Refresh the target of the standing order rather than issuing a new one: the droid's
-	   intention - embark on whichever transporter the game picks - has not changed, only our
-	   guess about which transporter that is. Going through orderDroidObj() would make
-	   orderDroidBase() treat this as a fresh primary order and strip DSS_RTL_TRANSPORT, after
-	   which the droid could never be retargeted again. DORDER_RTR refreshes its repair target
-	   the same way, see orderUpdateDroid(). */
-	objTrace(psDroid->id, "transporter %d was full on arrival, walking on to %d instead",
-	         (int)psTransporter->id, (int)psAlternate->id);
-	psDroid->order.psObj = psAlternate;
-	psDroid->order.pos = psAlternate->pos.xy();
-	actionDroid(psDroid, DACTION_MOVE, psAlternate->pos.x, psAlternate->pos.y);
-	return true;
 }
 
 /*Adds a droid to the transporter, removing it from the world */
@@ -1180,8 +1152,6 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	/* check for space */
 	if (!checkTransporterSpace(psTransporter, psDroidToAdd))
 	{
-		// NOTE: sending the droid on to another transporter is order-layer policy and lives in
-		// transporterRetargetIfFull(), which the caller consults first if it is allowed to.
 		if (!onMission && psDroidToAdd->isVtol())
 		{
 			moveStopDroid(psDroidToAdd); // So VTOLs are put into a MOVEHOVER status from the prior moveReallyStopDroid() in order.cpp's embark section.

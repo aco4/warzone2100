@@ -409,6 +409,25 @@ static bool tryDoRepairlikeAction(DROID *psDroid)
 	return true;
 }
 
+/**
+ * Update the current target transporter of a DORDER_EMBARK droid, and move it
+ * there.
+ *
+ * Don't issue a new DORDER_EMBARK through orderDroidObj(). That will clear
+ * DSS_RTL_TRANSPORT ("return to transport" secondary order) which the retarget
+ * behavior is gated on.
+ */
+static void orderRetargetEmbark(DROID *psDroid, DROID *psTransporter)
+{
+	ASSERT_OR_RETURN(, psDroid != nullptr && psTransporter != nullptr, "Invalid droid pointer");
+	ASSERT_OR_RETURN(, psDroid->order.type == DORDER_EMBARK, "Droid %d is not embarking", (int)psDroid->id);
+
+	objTrace(psDroid->id, "walking on to transporter %d instead", (int)psTransporter->id);
+	psDroid->order.psObj = psTransporter;
+	psDroid->order.pos = psTransporter->pos.xy();
+	actionDroid(psDroid, DACTION_MOVE, psTransporter->pos.x, psTransporter->pos.y);
+}
+
 /** This function updates all the orders status, according with psdroid's current order and state.
  * Returns false if all further droid processing should be shortcut for this frame (because, for example, the droid is a transporter that was moved to the off-world list)
  */
@@ -884,9 +903,9 @@ bool orderUpdateDroid(DROID *psDroid)
 	case DORDER_EMBARK:
 		{
 			// only place it can be trapped - in multiPlayer can only put cyborgs onto a Cyborg Transporter
-			DROID *temp = (DROID *)psDroid->order.psObj;	// NOTE: It is possible to have a NULL here
+			DROID *psTransporter = (DROID *)psDroid->order.psObj;	// NOTE: It is possible to have a NULL here
 
-			if (temp && temp->isTransporter() && !transporterAcceptsDroidType(temp, psDroid))
+			if (psTransporter && psTransporter->isTransporter() && !transporterAcceptsDroidType(psTransporter, psDroid))
 			{
 				psDroid->order = DroidOrder(DORDER_NONE);
 				actionDroid(psDroid, DACTION_NONE);
@@ -906,33 +925,33 @@ bool orderUpdateDroid(DROID *psDroid)
 				}
 
 				// Wait for the action to finish then assign to Transporter (if not already flying)
-				if (psDroid->order.psObj == nullptr || transporterFlying((DROID *)psDroid->order.psObj))
+				if (psTransporter == nullptr || transporterFlying(psTransporter))
 				{
 					psDroid->order = DroidOrder(DORDER_NONE);
 					actionDroid(psDroid, DACTION_NONE);
 				}
-				else if (abs((SDWORD)psDroid->pos.x - (SDWORD)psDroid->order.psObj->pos.x) < TILE_UNITS
-				         && abs((SDWORD)psDroid->pos.y - (SDWORD)psDroid->order.psObj->pos.y) < TILE_UNITS)
+				else if (abs((SDWORD)psDroid->pos.x - (SDWORD)psTransporter->pos.x) < TILE_UNITS
+				         && abs((SDWORD)psDroid->pos.y - (SDWORD)psTransporter->pos.y) < TILE_UNITS)
 				{
-					// save the target of current droid (the transporter)
-					DROID *transporter = (DROID *)psDroid->order.psObj;
-
-					/* The game may only revise an embark target that the game itself chose:
-					   a transporter the player named is an instruction, not a suggestion.
-					   DSS_RTL_TRANSPORT is set only by the auto-targeted paths, and any
-					   explicit primary order clears it again (see orderDroidBase()). */
-					const bool mayRedirect = (psDroid->secondaryOrder & DSS_RTL_MASK) == DSS_RTL_TRANSPORT;
-
 					// Make sure that it really is a valid droid
-					CHECK_DROID(transporter);
+					CHECK_DROID(psTransporter);
 
-					/* If the transporter turned out to be full, walk on to a different one
-					   rather than boarding. That only repoints the embark order this droid is
-					   already under, so none of the teardown below applies: it is still on its
-					   way to a transporter, and keeps the order, the movement and the
-					   DSS_RTL_TRANSPORT state that got it here. */
-					const bool retargeted = mayRedirect && transporterRetargetIfFull(psDroid);
-					if (!retargeted)
+					// Gate retargeting behavior on DSS_RTL_TRANSPORT.
+					// DSS_RTL_TRANSPORT is not set when the player explicitly specified a transporter.
+					const bool enableRetarget = (psDroid->secondaryOrder & DSS_RTL_MASK) == DSS_RTL_TRANSPORT;
+
+					// Find an alternate transporter if this one is full
+					DROID *psAlternate = nullptr;
+					if (enableRetarget && bMultiPlayer && !checkTransporterSpace(psTransporter, psDroid, /*mayFlash=*/false))
+					{
+						psAlternate = transporterFindBestForEmbark(psDroid);
+					}
+
+					if (psAlternate != nullptr)
+					{
+						orderRetargetEmbark(psDroid, psAlternate);
+					}
+					else
 					{
 						// order the droid to stop so moveUpdateDroid does not process this unit
 						orderDroid(psDroid, DORDER_STOP, ModeImmediate);
@@ -942,12 +961,10 @@ bool orderUpdateDroid(DROID *psDroid)
 						moveReallyStopDroid(psDroid);
 
 						// Fire off embark event
-						triggerEvent(TRIGGER_TRANSPORTER_EMBARKED, transporter);
+						triggerEvent(TRIGGER_TRANSPORTER_EMBARKED, psTransporter);
 
-						/* We must add the droid to the transporter only *after*
-						* processing changing its orders (see above).
-						*/
-						transporterAddDroid(transporter, psDroid);
+						// Must come *after* changing the droid's orders
+						transporterAddDroid(psTransporter, psDroid);
 					}
 				}
 				else if (psDroid->action == DACTION_NONE)
@@ -3028,16 +3045,12 @@ DROID *FindATransporter(DROID const *embarkee)
 {
 	if (bMultiPlayer)
 	{
-		/* Prefer a transporter that embarkee can actually reach and that will still have room
-		   for it once the droids already on their way have boarded. */
 		if (DROID *psBest = transporterFindBestForEmbark(embarkee))
 		{
 			return psBest;
 		}
 	}
 
-	/* Fall back on the nearest transporter of a usable type, full or not, so that a droid with
-	   nowhere good to go still walks towards something instead of being left standing. */
 	DROID *bestDroid = nullptr;
 	unsigned bestDist = ~0u;
 
@@ -3940,8 +3953,12 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 				{
 					order = DORDER_EMBARK;
 					CurrState |= DSS_RTL_TRANSPORT;
-					if (!orderState(psDroid, DORDER_EMBARK))
+
+					// If not embarking or the target transporter differs from psTransport, update
+					if (!orderState(psDroid, DORDER_EMBARK) || psDroid->order.psObj != psTransport)
 					{
+						// Although this clears DSS_RTL_TRANSPORT, it will be
+						// restored later
 						orderDroidObj(psDroid, DORDER_EMBARK, psTransport, ModeImmediate);
 					}
 				}

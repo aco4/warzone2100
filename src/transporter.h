@@ -56,38 +56,11 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 /*check to see if the droid can fit on the Transporter - return true if fits*/
 bool checkTransporterSpace(DROID const *psTransporter, DROID const *psAssigned, bool mayFlash = true);
 
-/**
- * True if psDroid's body type is allowed on this class of transporter: a DROID_TRANSPORTER
- * (cyborg transporter) only accepts cyborgs, a DROID_SUPERTRANSPORTER accepts anything.
- * This is a type-compatibility test only - it says nothing about remaining space.
- */
+/* Can this type of transporter carry this type of droid? */
 bool transporterAcceptsDroidType(DROID const *psTransporter, DROID const *psDroid);
 
-/**
- * Picks the best transporter for psDroid to embark on, from psDroid's own player.
- * Considers only live, non-flying transporters with planned space remaining, where "planned"
- * subtracts droids already holding a DORDER_EMBARK order on that transporter.
- * Ranked by squared straight-line distance from psDroid, with transporters it cannot reach
- * (per fpathCheck, using psDroid's own propulsion) rejected outright. There is no range
- * limit - a transporter it can walk to is a transporter it can use. Returns nullptr if
- * nothing qualifies.
- * Reads only synchronized game state - safe to call on every client. Applies no game-mode
- * policy of its own: the caller decides when it is appropriate to consult it.
- */
+/* Intelligently decide the transporter to embark, or nullptr if none */
 DROID *transporterFindBestForEmbark(DROID const *psDroid);
-
-/**
- * psDroid must be holding a DORDER_EMBARK order. If the transporter it targets has no room,
- * repoints that same order at the best available transporter and sends psDroid walking to it,
- * returning true. Returns false if there is room, or if no suitable alternative exists - the
- * caller should then go ahead and board psDroid with transporterAddDroid().
- *
- * The order itself is only retargeted, never reissued, so psDroid keeps its standing
- * DSS_RTL_TRANSPORT state and can be retargeted again if the replacement fills up too.
- * Only the game's own embark targets may be revised this way, so it is up to the caller to
- * establish that the player did not pick the current target explicitly. Multiplayer only.
- */
-bool transporterRetargetIfFull(DROID *psDroid);
 
 /*calculates how much space is remaining on the transporter - allows droids to take
 up different amount depending on their body size - currently all are set to one!*/
