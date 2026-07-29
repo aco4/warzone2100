@@ -903,7 +903,10 @@ bool orderUpdateDroid(DROID *psDroid)
 	case DORDER_EMBARK:
 		{
 			// only place it can be trapped - in multiPlayer can only put cyborgs onto a Cyborg Transporter
-			DROID *psTransporter = (DROID *)psDroid->order.psObj;	// NOTE: It is possible to have a NULL here
+			// NOTE: It is possible to have a NULL here. castDroid() also yields NULL if the order
+			// target is somehow not a droid, which the branches below already handle by clearing
+			// the order (reading droidType off a STRUCTURE/FEATURE would be undefined).
+			DROID *psTransporter = castDroid(psDroid->order.psObj);
 
 			if (psTransporter && psTransporter->isTransporter() && !transporterAcceptsDroidType(psTransporter, psDroid))
 			{

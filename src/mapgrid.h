@@ -51,9 +51,11 @@ GridList const &gridStartIterateDroidsByPlayer(int32_t x, int32_t y, uint32_t ra
 /// Find all objects within radius where (object->type == OBJ_DROID && !object->died)
 GridList const &gridStartIterateRepairCandidates(int32_t x, int32_t y, uint32_t radius, int player);
 
-/// Find this player's transporters within radius that can currently accept embarking droids
-/// (own, not died, is a transporter, has a group, and is not flying). The embarking-droid-dependent
-/// transporterAcceptsDroidType() check must be applied by the caller.
+/// Find this player's transporters within radius, i.e. (object->type == OBJ_DROID &&
+/// object->player == player && droid->isTransporter()). The filter is deliberately limited to
+/// properties that cannot change mid-tick, because filter erasures persist until the next
+/// gridReset(). Every mutable condition -- died, psGroup, transporterFlying(),
+/// transporterAcceptsDroidType() and remaining capacity -- must be applied by the caller.
 GridList const &gridStartIterateEmbarkTransporters(int32_t x, int32_t y, uint32_t radius, int player);
 
 // Used for visibility.

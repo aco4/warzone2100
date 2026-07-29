@@ -1038,14 +1038,20 @@ bool transporterAcceptsDroidType(DROID const *psTransporter, DROID const *psDroi
 
 namespace
 {
-	// Sync-safe integer hash for HRW (rendezvous) weighting of (droid, transporter) pairs.
+	// Sync-safe integer hash for HRW (rendezvous) weighting of (droid, transporter, slot) triples.
 	// A splitmix64/murmur3-style fmix finalizer: integer-only and platform-independent, so
 	// host and clients compute the same value (no std::hash, no floating point). The result
 	// is forced nonzero so a zero-distance candidate still resolves strictly in the HRW
 	// cross-multiply (its opponent's cross term is 0 -> it must win, not degenerate to a tie).
-	uint32_t embarkHash(uint32_t droidId, uint32_t transporterId)
+	//
+	// slot identifies one of a transporter's virtual slots: a transporter with k free seats is
+	// drawn k times (slot 0..k-1) and scored by its largest draw, which is what makes the HRW
+	// pick capacity-weighted. Slots are folded in with an odd (golden-ratio) constant so that
+	// each slot is an independent draw rather than a shift of the same one.
+	uint32_t embarkHash(uint32_t droidId, uint32_t transporterId, uint32_t slot)
 	{
 		uint64_t x = ((uint64_t)droidId << 32) | (uint64_t)transporterId;
+		x ^= (uint64_t)slot * 0x9E3779B97F4A7C15ULL;
 		x ^= x >> 30;
 		x *= 0xbf58476d1ce4e5b9ULL;
 		x ^= x >> 27;
@@ -1060,11 +1066,18 @@ namespace
 //
 // Multiplayer-only (FindATransporter only calls this under bMultiPlayer). Candidate
 // discovery uses the maintained mapgrid embark filter (a radius-bounded grid query) instead
-// of a full droid-list scan. Among candidates that pass a hard, ground-truth capacity gate,
-// the winner is chosen by deterministic HRW (rendezvous) hashing:
-// argmax( embarkHash(droid.id, transporter.id) / droidSqDist ). The hash disperses droids
-// across near-equidistant transporters; the distance term keeps the pick local. This reads
-// no other droid's orders (no reservation pass), so it is O(T) per droid.
+// of a full droid-list scan. Candidates must pass a hard, ground-truth capacity gate, and the
+// winner is then chosen by deterministic *weighted* HRW (rendezvous) hashing:
+// argmax( maxSlotHash / droidSqDist ), where maxSlotHash is the largest embarkHash draw over
+// the candidate's remaining capacity in virtual slots. Remaining capacity therefore does not
+// merely filter, it weights the pick: since the global winner owns the single largest draw
+// among all sum(freeSpace) iid draws, at equal distance P(pick i) = freeSpace_i / sum(freeSpace)
+// -- exactly proportional, so an emptier transporter is preferred over a nearly-full one and
+// they fill up together. The distance term keeps the pick local: with capacity linear in slot
+// count and distance inverse-square, a droid detours to an emptier transporter only within
+// ~sqrt(capacityRatio) of a nearer-but-fuller one. Equal free space reduces to plain
+// hash / sqDist dispersal across near-equidistant transporters. This reads no other droid's
+// orders (no reservation pass), so it is O(T) per droid.
 //
 // Residual over-assignment (a droid picking a transporter that fills before it arrives) is
 // corrected by the multiplayer arrival-time heal in order.cpp, which re-checks ground-truth
@@ -1082,23 +1095,33 @@ DROID *transporterFindBestForEmbark(DROID const *psDroid)
 
 	const int spaceNeeded = transporterSpaceRequired(psDroid);
 	DROID *psBest = nullptr;
-	uint32_t bestHash = 0;
+	uint32_t bestMaxHash = 0;
 	int bestDist = 0;
 
 	for (BASE_OBJECT *psObj : gridStartIterateEmbarkTransporters(psDroid->pos.x, psDroid->pos.y, EMBARK_SEARCH_RADIUS, psDroid->player))
 	{
-		DROID *psCurr = (DROID *)psObj;  // Filter guarantees OBJ_DROID.
+		DROID *psCurr = (DROID *)psObj;  // Filter guarantees OBJ_DROID and isTransporter().
 		if (psCurr == psDroid)
 		{
 			continue;  // A transporter ordered to embark can't board itself.
 		}
-		// Droid-dependent check, deliberately left out of the maintained filter.
+		// Everything mutable within a tick is checked here rather than in the mapgrid filter:
+		// filter erasures are sticky until the next gridReset(), so a predicate that changes
+		// mid-tick would make the candidate set depend on when the first query fired -- which
+		// differs per client and desyncs multiplayer. See gridStartIterateEmbarkTransporters().
+		if (psCurr->died || psCurr->psGroup == nullptr || transporterFlying(psCurr))
+		{
+			continue;
+		}
+		// Droid-dependent check, likewise not filterable.
 		if (!transporterAcceptsDroidType(psCurr, psDroid))
 		{
 			continue;
 		}
-		// Hard, ground-truth capacity gate (no reservations).
-		if (calcRemainingCapacity(psCurr) < spaceNeeded)
+		// Hard, ground-truth capacity gate (no reservations). The gated capacity doubles as the
+		// virtual-slot count below, so this costs no extra calcRemainingCapacity call.
+		const int freeSpace = calcRemainingCapacity(psCurr);
+		if (freeSpace < spaceNeeded)
 		{
 			continue;
 		}
@@ -1109,11 +1132,23 @@ DROID *transporterFindBestForEmbark(DROID const *psDroid)
 			continue;
 		}
 
-		const uint32_t hash = embarkHash(psDroid->id, psCurr->id);
+		// Capacity weight: draw one hash per free seat and keep the largest. freeSpace is in
+		// [spaceNeeded, TRANSPORTER_CAPACITY], so this runs at least once and maxHash >= 1
+		// (embarkHash forces nonzero), keeping the zero-distance case strictly resolvable.
+		uint32_t maxHash = 0;
+		for (int slot = 0; slot < freeSpace; ++slot)
+		{
+			const uint32_t h = embarkHash(psDroid->id, psCurr->id, (uint32_t)slot);
+			if (h > maxHash)
+			{
+				maxHash = h;
+			}
+		}
 
-		// HRW pick: maximise hash / sqDist, compared by integer cross-multiplication to stay
-		// float-free and MP-deterministic (uint64_t suffices: hash < 2^32, sqDist < 2^31, so
-		// each product < 2^63). Order-independent full compare; tie-break on transporter id.
+		// Weighted HRW pick: maximise maxHash / sqDist, compared by integer cross-multiplication
+		// to stay float-free and MP-deterministic (uint64_t suffices: maxHash < 2^32,
+		// sqDist < 2^31, so each product < 2^63). Order-independent full compare; tie-break on
+		// transporter id.
 		bool better;
 		if (psBest == nullptr)
 		{
@@ -1121,14 +1156,14 @@ DROID *transporterFindBestForEmbark(DROID const *psDroid)
 		}
 		else
 		{
-			const uint64_t lhs = (uint64_t)hash * (uint64_t)bestDist;
-			const uint64_t rhs = (uint64_t)bestHash * (uint64_t)sqDist;
+			const uint64_t lhs = (uint64_t)maxHash * (uint64_t)bestDist;
+			const uint64_t rhs = (uint64_t)bestMaxHash * (uint64_t)sqDist;
 			better = (lhs > rhs) || (lhs == rhs && psCurr->id < psBest->id);
 		}
 		if (better)
 		{
 			psBest = psCurr;
-			bestHash = hash;
+			bestMaxHash = maxHash;
 			bestDist = sqDist;
 		}
 	}

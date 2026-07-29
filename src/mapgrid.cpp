@@ -31,7 +31,6 @@
 #include "mapgrid.h"
 #include "pointtree.h"
 #include "game_world.h"
-#include "transporter.h"
 
 
 static PointTree *gridPointTree = nullptr;  // A quad-tree-like object.
@@ -243,13 +242,19 @@ struct ConditionEmbarkTransporter
 	ConditionEmbarkTransporter(int32_t player_) : player(player_) {}
 	bool test(BASE_OBJECT *obj) const
 	{
+		// A PointTree::Filter is *sticky*: a failing object is erased from the filter and stays
+		// erased until the next gridReset() (once per gameStateUpdate). So this predicate must be
+		// constant for the whole tick -- otherwise the answer depends on when in the tick the
+		// first query happened to fire, which differs between clients and desyncs multiplayer.
+		//
+		// type, player and droidType (isTransporter) never change mid-tick, so every client
+		// erases the identical set no matter when it queries. Everything mutable -- died,
+		// psGroup, transporterFlying(), and the embarking-droid-dependent
+		// transporterAcceptsDroidType()/capacity gates -- is applied at the call site instead,
+		// in transporterFindBestForEmbark().
 		if (obj->type != OBJ_DROID || obj->player != player) return false;
 		const DROID *psDroid = (const DROID*) obj;
-		// Only the droid-independent, cheap tests belong in the maintained filter.
-		// transporterAcceptsDroidType() depends on the embarking droid, so it must be
-		// applied at the call site instead of here.
-		return !psDroid->died && psDroid->isTransporter() && psDroid->psGroup != nullptr
-		       && !transporterFlying(psDroid);
+		return psDroid->isTransporter();
 	}
 	int player;
 };
