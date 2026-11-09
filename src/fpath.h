@@ -162,6 +162,32 @@ public:
 	FPathDroidUpdateScope &operator=(FPathDroidUpdateScope &&) = delete;
 };
 
+/// The tiles of a square window that can be driven to from a start tile, as found by fpathReachableTiles.
+struct PathReachableTiles
+{
+	Vector2i origin = Vector2i(0, 0);  ///< Top left tile of the window.
+	int width = 0;
+	int height = 0;
+	std::vector<uint8_t> flags;        ///< One 0/1 per tile of the window, row by row.
+
+	bool inWindow(Vector2i tile) const
+	{
+		return tile.x >= origin.x && tile.y >= origin.y && tile.x < origin.x + width && tile.y < origin.y + height;
+	}
+	/// Whether the tile can be driven to. Any tile outside the window reads as out of reach.
+	bool reachable(Vector2i tile) const
+	{
+		return inWindow(tile) && flags[(tile.x - origin.x) + (tile.y - origin.y) * width] != 0;
+	}
+};
+
+/** Which tiles within radius tiles of a droid it can drive to without leaving that window (see fpathReachableTiles).
+ *
+ *  Uses the start tile and move type a route request for the droid would use, so it answers whether a route
+ *  could get there. Deterministic, and reads only synced state.
+ */
+PathReachableTiles fpathDroidReachableTiles(const DROID *psDroid, const WorldMapState &mapState, int radius);
+
 /** Quick O(1) test of whether it is theoretically possible to go from origin to destination
  *  using the given propulsion type. orig and dest are in world coordinates. */
 bool fpathCheck(WorldMapState& mapState, Position orig, Position dest, PROPULSION_TYPE propulsion);

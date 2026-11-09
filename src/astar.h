@@ -76,6 +76,17 @@ std::shared_ptr<FPathExecuteContext> makeFPathExecuteContext();
  */
 ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE_CONTROL *psMove, PATHJOB *psJob);
 
+/** Which tiles within radius tiles of start (a square window, clipped to the map) a route from start can get to
+ *  without leaving the window.
+ *
+ *  A plain fill, with no costs and no target. It tests tiles with fpathBaseBlockingTile, which a route's blocking map
+ *  is built from, and steps between them by the route search's own rule, so a tile is flagged exactly when a route
+ *  confined to the window could arrive there. A tile reachable only by a detour that leaves the window is not flagged.
+ *
+ *  Reads the map only: it builds no blocking map and shares no state with the path threads.
+ */
+PathReachableTiles fpathReachableTiles(const WorldMapState &mapState, Vector2i start, int radius, PROPULSION_TYPE propulsion, int owner, FPATH_MOVETYPE moveType);
+
 /// Call from main thread.
 /// Sets psJob->blockingMap for later use by pathfinding thread, generating the required map if not already generated.
 void fpathSetBlockingMap(PATHJOB *psJob);

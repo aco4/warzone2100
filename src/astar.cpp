@@ -249,6 +249,48 @@ static const Vector2i aDirOffset[] =
 	Vector2i(1, 1),
 };
 
+/** Whether a route may step from tile (x, y) to its neighbour in direction dir, an index into aDirOffset.
+ *
+ *  This is the one statement of which steps between tiles are legal. The route search (fpathAStarExplore)
+ *  and the reachability fill (fpathReachableTiles) both go through it, so they cannot disagree.
+ *
+ *  A step may not enter a blocked tile, and a diagonal step may not cut a corner: both tiles it passes
+ *  between must be open too. Corners may be cut on the way into or out of the destination structure.
+ *
+ *     3  4  5
+ *      \|/
+ *    2 -I- 6
+ *      /|\
+ *     1  0  7
+ *    even: orthogonal steps, odd: diagonal steps
+ *
+ *  @param isBlocked     isBlocked(x, y), whether a tile may not be entered.
+ *  @param isDestination isDestination(x, y), whether a tile is part of the destination structure.
+ */
+template <typename IsBlocked, typename IsDestination>
+static inline bool fpathCanStep(int x, int y, unsigned dir, IsBlocked &&isBlocked, IsDestination &&isDestination)
+{
+	const int nx = x + aDirOffset[dir].x;
+	const int ny = y + aDirOffset[dir].y;
+
+	if (dir % 2 != 0 && !isDestination(x, y) && !isDestination(nx, ny))
+	{
+		// We cannot cut corners
+		const Vector2i &side1 = aDirOffset[(dir + 1) % 8];
+		if (isBlocked(x + side1.x, y + side1.y))
+		{
+			return false;
+		}
+		const Vector2i &side2 = aDirOffset[(dir + 7) % 8];
+		if (isBlocked(x + side2.x, y + side2.y))
+		{
+			return false;
+		}
+	}
+
+	return !isBlocked(nx, ny);
+}
+
 void fpathHardTableReset()
 {
 	fpathBlockingMaps.clear();
@@ -487,46 +529,16 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 		// loop through possible moves in 8 directions to find a valid move
 		for (unsigned dir = 0; dir < ARRAY_SIZE(aDirOffset); ++dir)
 		{
-			// Try a new location
-			int x = node.p.x + aDirOffset[dir].x;
-			int y = node.p.y + aDirOffset[dir].y;
-
-			/*
-			   5  6  7
-			     \|/
-			   4 -I- 0
-			     /|\
-			   3  2  1
-			   odd:orthogonal-adjacent tiles even:non-orthogonal-adjacent tiles
-			*/
-			if (dir % 2 != 0 && !context.dstIgnore.isNonblocking(node.p.x, node.p.y) && !context.dstIgnore.isNonblocking(x, y))
+			if (!fpathCanStep(node.p.x, node.p.y, dir,
+			                  [&context](int x, int y) { return context.isBlocked(x, y); },
+			                  [&context](int x, int y) { return context.dstIgnore.isNonblocking(x, y); }))
 			{
-				int x2, y2;
-
-				// We cannot cut corners
-				x2 = node.p.x + aDirOffset[(dir + 1) % 8].x;
-				y2 = node.p.y + aDirOffset[(dir + 1) % 8].y;
-				if (context.isBlocked(x2, y2))
-				{
-					continue;
-				}
-				x2 = node.p.x + aDirOffset[(dir + 7) % 8].x;
-				y2 = node.p.y + aDirOffset[(dir + 7) % 8].y;
-				if (context.isBlocked(x2, y2))
-				{
-					continue;
-				}
-			}
-
-			// See if the node is a blocking tile
-			if (context.isBlocked(x, y))
-			{
-				// tile is blocked, skip it
+				// the step is not allowed, skip it
 				continue;
 			}
 
 			// Now insert the point into the appropriate list, if not already visited.
-			fpathNewNode(context, tileF, PathCoord(x, y), node.dist, node.p);
+			fpathNewNode(context, tileF, PathCoord(node.p.x + aDirOffset[dir].x, node.p.y + aDirOffset[dir].y), node.dist, node.p);
 		}
 	}
 
@@ -1155,6 +1167,52 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 	}
 
 	return retval;
+}
+
+PathReachableTiles fpathReachableTiles(const WorldMapState &mapState, Vector2i start, int radius, PROPULSION_TYPE propulsion, int owner, FPATH_MOVETYPE moveType)
+{
+	PathReachableTiles out;
+	const Vector2i origin(std::max(start.x - radius, 0), std::max(start.y - radius, 0));
+	const Vector2i end(std::min(start.x + radius + 1, mapState.width), std::min(start.y + radius + 1, mapState.height));
+	if (start.x < origin.x || start.y < origin.y || start.x >= end.x || start.y >= end.y)
+	{
+		return out;  // The start is off the map.
+	}
+	out.origin = origin;
+	out.width = end.x - origin.x;
+	out.height = end.y - origin.y;
+	out.flags.assign(static_cast<size_t>(out.width) * static_cast<size_t>(out.height), 0);
+
+	// Tiles are tested as the blocking map of a route would hold them (fpathSetBlockingMap), and tiles outside the window count as blocked.
+	auto isBlocked = [&](int x, int y) {
+		return !out.inWindow(Vector2i(x, y)) || fpathBaseBlockingTile(mapState, x, y, propulsion, owner, moveType);
+	};
+	// No destination structure: a route to a structure is in reach of it once it gets to a tile next to it.
+	auto isDestination = [](int, int) { return false; };
+
+	// As a route does, start from the start tile whether or not it is blocked.
+	std::vector<Vector2i> open(1, start);
+	out.flags[(start.x - origin.x) + (start.y - origin.y) * out.width] = 1;
+	while (!open.empty())
+	{
+		const Vector2i tile = open.back();
+		open.pop_back();
+		for (unsigned dir = 0; dir < ARRAY_SIZE(aDirOffset); ++dir)
+		{
+			if (!fpathCanStep(tile.x, tile.y, dir, isBlocked, isDestination))
+			{
+				continue;
+			}
+			const Vector2i next = tile + aDirOffset[dir];
+			uint8_t &flag = out.flags[(next.x - origin.x) + (next.y - origin.y) * out.width];
+			if (!flag)
+			{
+				flag = 1;
+				open.push_back(next);
+			}
+		}
+	}
+	return out;
 }
 
 void fpathSetBlockingMap(PATHJOB *psJob)
