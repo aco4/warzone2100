@@ -118,6 +118,22 @@ void fpathSetDirectRoute(DROID *psDroid, SDWORD targetX, SDWORD targetY);
 /** Clean up path jobs and results for a droid. Function is thread-safe. */
 void fpathRemoveDroidData(int id);
 
+/** Tiles near a droid that it can drive to, see fpathDroidReachableTiles. */
+struct FPathReachableTiles
+{
+	StructureBounds area;        ///< The tiles that were searched.
+	std::vector<bool> tiles;     ///< For each tile in the area, row by row, whether the droid can get there.
+
+	bool isReachable(Vector2i tile) const;
+	/// Whether the droid can get to a tile touching the given structure footprint, which is close enough to work on
+	/// the structure (see actionReachedBuildPos).
+	bool canGetNextTo(StructureBounds const &structure) const;
+};
+
+/** Finds which tiles within @c radius tiles of the droid it can drive to, without leaving that area. Uses the same
+ *  blocking tiles and moves as the pathfinding for the droid, but answers immediately. Call from main thread. */
+FPathReachableTiles fpathDroidReachableTiles(DROID *psDroid, int radius);
+
 /** Quick O(1) test of whether it is theoretically possible to go from origin to destination
  *  using the given propulsion type. orig and dest are in world coordinates. */
 bool fpathCheck(WorldMapState& mapState, Position orig, Position dest, PROPULSION_TYPE propulsion);

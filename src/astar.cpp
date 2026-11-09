@@ -167,8 +167,8 @@ struct PathfindContext
 		{
 			return false;  // The path is actually blocked here by a structure, but ignore it since it's where we want to go (or where we came from).
 		}
-		// Not sure whether the out-of-bounds check is needed, can only happen if pathfinding is started on a blocking tile (or off the map).
-		return x < 0 || y < 0 || x >= gameWorld.map.width || y >= gameWorld.map.height || blockingMap->map[x + y * gameWorld.map.width];
+		// Tiles outside the search area (normally the whole map) count as blocking.
+		return !searchArea.isNonblocking(x, y) || blockingMap->map[x + y * gameWorld.map.width];
 	}
 	bool isDangerous(int x, int y) const
 	{
@@ -179,11 +179,12 @@ struct PathfindContext
 		// Must check myGameTime == blockingMap_->type.gameTime, otherwise blockingMap could be a deleted pointer which coincidentally compares equal to the valid pointer blockingMap_.
 		return myGameTime == blockingMap_->type.gameTime && blockingMap == blockingMap_ && tileS == tileS_ && dstIgnore == dstIgnore_;
 	}
-	void assign(const std::shared_ptr<const PathBlockingMap> &blockingMap_, PathCoord tileS_, PathNonblockingArea dstIgnore_)
+	void assign(const std::shared_ptr<const PathBlockingMap> &blockingMap_, PathCoord tileS_, PathNonblockingArea dstIgnore_, PathNonblockingArea searchArea_)
 	{
 		blockingMap = blockingMap_;
 		tileS = tileS_;
 		dstIgnore = dstIgnore_;
+		searchArea = searchArea_;
 		myGameTime = blockingMap->type.gameTime;
 		nodes.clear();
 
@@ -211,7 +212,14 @@ struct PathfindContext
 	std::vector<PathExploredTile> map;  ///< Map, with paths leading back to tileS.
 	std::shared_ptr<const PathBlockingMap> blockingMap; ///< Map of blocking tiles for the type of object which needs a path.
 	PathNonblockingArea dstIgnore;      ///< Area of structure at destination which should be considered nonblocking.
+	PathNonblockingArea searchArea;     ///< Area the search may not leave. The whole map, except for fpathAStarReachableTiles.
 };
+
+/// The whole map, as a search area.
+static PathNonblockingArea fpathWholeMap()
+{
+	return PathNonblockingArea(StructureBounds(Vector2i(0, 0), Vector2i(gameWorld.map.width, gameWorld.map.height)));
+}
 
 /// Lists of blocking maps from current tick.
 static std::vector<std::shared_ptr<PathBlockingMap>> fpathBlockingMaps;
@@ -232,9 +240,13 @@ static const Vector2i aDirOffset[] =
 	Vector2i(1, 1),
 };
 
+/// Context for fpathAStarReachableTiles, which is only called from the main thread.
+static PathfindContext fpathMainThreadContext;
+
 void fpathHardTableReset()
 {
 	fpathBlockingMaps.clear();
+	fpathMainThreadContext = PathfindContext();
 }
 
 /** Get the nearest entry in the open list
@@ -431,9 +443,9 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 	return nearestCoord;
 }
 
-static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore)
+static void fpathInitContext(PathfindContext &context, const std::shared_ptr<const PathBlockingMap> &blockingMap, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore, PathNonblockingArea searchArea = fpathWholeMap())
 {
-	context.assign(blockingMap, tileS, dstIgnore);
+	context.assign(blockingMap, tileS, dstIgnore, searchArea);
 
 	// Add the start point to the open list
 	fpathNewNode(context, tileF, tileRealS, 0, tileRealS);
@@ -731,6 +743,33 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 	psMove->destination = psMove->asPath[path.size() - 1];
 
 	return retval;
+}
+
+std::vector<bool> fpathAStarReachableTiles(const PATHJOB *psJob, StructureBounds const &area)
+{
+	ASSERT_OR_RETURN({}, psJob->blockingMap != nullptr, "Blocking map not set");
+	ASSERT_OR_RETURN({}, area.map.x >= 0 && area.map.y >= 0 && area.map.x + area.size.x <= gameWorld.map.width && area.map.y + area.size.y <= gameWorld.map.height, "Area not on map");
+	const PathCoord tileOrig(map_coord(psJob->origX), map_coord(psJob->origY));
+	const PathNonblockingArea searchArea(area);
+	ASSERT_OR_RETURN({}, searchArea.isNonblocking(tileOrig.x, tileOrig.y), "Start not in area");
+
+	// There is no destination. Exploring towards a tile outside the area, which can't be reached, makes the search
+	// visit every tile in the area that can be reached.
+	const PathCoord noDestination(area.map.x - 1, area.map.y - 1);
+	PathfindContext &context = fpathMainThreadContext;
+	fpathInitContext(context, psJob->blockingMap, tileOrig, tileOrig, noDestination, PathNonblockingArea(), searchArea);
+	fpathAStarExplore(context, noDestination);
+
+	std::vector<bool> reachable(area.size.x * area.size.y, false);
+	for (int y = 0; y < area.size.y; ++y)
+	{
+		for (int x = 0; x < area.size.x; ++x)
+		{
+			const PathExploredTile &tile = context.map[(area.map.x + x) + (area.map.y + y) * gameWorld.map.width];
+			reachable[x + y * area.size.x] = tile.iteration == context.iteration && tile.visited;
+		}
+	}
+	return reachable;
 }
 
 void fpathSetBlockingMap(PATHJOB *psJob)

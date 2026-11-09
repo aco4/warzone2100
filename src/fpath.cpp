@@ -541,17 +541,23 @@ queuePathfinding:
 }
 
 
+static FPATH_MOVETYPE fpathDroidMoveType(const DROID *psDroid, FPATH_MOVETYPE moveType)
+{
+	// override for AI to blast our way through stuff
+	if (!isHumanPlayer(psDroid->player) && moveType == FMT_MOVE)
+	{
+		moveType = (psDroid->asWeaps[0].nStat == 0) ? FMT_MOVE : FMT_ATTACK;
+	}
+	return moveType;
+}
+
 // Find a route for an DROID to a location in world coordinates
 FPATH_RETVAL fpathDroidRoute(DROID *psDroid, const WorldMapState& mapState, SDWORD tX, SDWORD tY, FPATH_MOVETYPE moveType)
 {
 	bool acceptNearest;
 	PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
 
-	// override for AI to blast our way through stuff
-	if (!isHumanPlayer(psDroid->player) && moveType == FMT_MOVE)
-	{
-		moveType = (psDroid->asWeaps[0].nStat == 0) ? FMT_MOVE : FMT_ATTACK;
-	}
+	moveType = fpathDroidMoveType(psDroid, moveType);
 
 	ASSERT_OR_RETURN(FPR_FAILED, psPropStats != nullptr, "invalid propulsion stats pointer");
 	ASSERT_OR_RETURN(FPR_FAILED, psDroid->type == OBJ_DROID, "We got passed an object that isn't a DROID!");
@@ -587,6 +593,62 @@ FPATH_RETVAL fpathDroidRoute(DROID *psDroid, const WorldMapState& mapState, SDWO
 	}
 	return fpathRoute(mapState, &psDroid->sMove, psDroid->id, startPos.x, startPos.y, endPos.x, endPos.y, psPropStats->propulsionType,
 	                  psDroid->droidType, moveType, psDroid->player, acceptNearest, dstStructure);
+}
+
+bool FPathReachableTiles::isReachable(Vector2i tile) const
+{
+	const Vector2i d = tile - area.map;
+	return d.x >= 0 && d.y >= 0 && d.x < area.size.x && d.y < area.size.y && tiles[d.x + d.y * area.size.x];
+}
+
+bool FPathReachableTiles::canGetNextTo(StructureBounds const &structure) const
+{
+	// Same tiles as actionReachedBuildPos accepts: the structure's footprint, and the tiles around it.
+	for (int y = structure.map.y - 1; y <= structure.map.y + structure.size.y; ++y)
+	{
+		for (int x = structure.map.x - 1; x <= structure.map.x + structure.size.x; ++x)
+		{
+			if (isReachable(Vector2i(x, y)))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+FPathReachableTiles fpathDroidReachableTiles(DROID *psDroid, int radius)
+{
+	FPathReachableTiles result;
+	const Vector2i droidTile = map_coord(psDroid->pos.xy());
+	const Vector2i areaMin(std::max(droidTile.x - radius, 0), std::max(droidTile.y - radius, 0));
+	const Vector2i areaMax(std::min(droidTile.x + radius + 1, gameWorld.map.width), std::min(droidTile.y + radius + 1, gameWorld.map.height));
+	result.area = StructureBounds(areaMin, areaMax - areaMin);
+	ASSERT_OR_RETURN(result, result.area.size.x > 0 && result.area.size.y > 0, "Droid not on map");
+
+	// Set up the same way as fpathDroidRoute, so the same tiles count as blocking, and the search starts from the same place.
+	const PROPULSION_TYPE propulsion = psDroid->getPropulsionStats()->propulsionType;
+	PATHJOB job;
+	job.propulsion = propulsion;
+	job.droidType = psDroid->droidType;
+	job.droidID = psDroid->id;
+	job.moveType = fpathDroidMoveType(psDroid, FMT_MOVE);
+	job.owner = psDroid->player;
+	const Position start = findNonblockingPosition(gameWorld.map, psDroid->pos, propulsion, psDroid->player, job.moveType);
+	job.origX = job.destX = start.x;
+	job.origY = job.destY = start.y;
+	job.acceptNearest = false;
+	job.deleted = false;
+	const Vector2i startTile = map_coord(start.xy());
+	if (startTile.x < areaMin.x || startTile.y < areaMin.y || startTile.x >= areaMax.x || startTile.y >= areaMax.y)
+	{
+		// The droid is on a blocking tile, and the nearest free tile is outside the area (only possible for a tiny area).
+		result.tiles.assign(result.area.size.x * result.area.size.y, false);
+		return result;
+	}
+	fpathSetBlockingMap(&job);
+	result.tiles = fpathAStarReachableTiles(&job, result.area);
+	return result;
 }
 
 // Run only from path thread

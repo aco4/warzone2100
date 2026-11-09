@@ -23,6 +23,7 @@
 
 #include "fpath.h"
 #include <memory>
+#include <vector>
 
 /** return codes for astar
  *
@@ -49,6 +50,12 @@ std::shared_ptr<FPathExecuteContext> makeFPathExecuteContext();
  *  @ingroup pathfinding
  */
 ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE_CONTROL *psMove, PATHJOB *psJob);
+
+/// Call from main thread.
+/// Finds which tiles in the area can be reached from (psJob->origX, psJob->origY) without leaving the area, moving the
+/// same way as fpathAStarRoute does. psJob->blockingMap must already be set, see fpathSetBlockingMap.
+/// Returns one entry per tile in the area, row by row.
+std::vector<bool> fpathAStarReachableTiles(const PATHJOB *psJob, StructureBounds const &area);
 
 /// Call from main thread.
 /// Sets psJob->blockingMap for later use by pathfinding thread, generating the required map if not already generated.
