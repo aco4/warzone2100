@@ -1905,8 +1905,6 @@ void actionUpdateDroid(DROID *psDroid)
 			}
 			else
 			{
-				// Holding position and out of reach - don't keep picking this target over ones that are in reach.
-				droidMarkTargetUnreachable(psDroid, psDroid->psActionTarget[0]);
 				psDroid->action = DACTION_NONE;
 			}
 		}
@@ -2592,16 +2590,6 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 		}
 		break;
 	case DACTION_SULK:
-		if (actionMovesToStructureSite(priorDroidAction))
-		{
-			// The pathfinder could not find a way to the structure we were going to work on (e.g. it is walled in).
-			// Remember that, so we don't keep picking it when looking for something to repair or help build.
-			if (STRUCTURE *psStruct = getTileStructure(gameWorld.map, map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y)))
-			{
-				objTrace(psDroid->id, "Could not route to structure %u - marking it unreachable", psStruct->id);
-				droidMarkTargetUnreachable(psDroid, psStruct);
-			}
-		}
 		psDroid->action = DACTION_SULK;
 		// hmmm, hope this doesn't cause any problems!
 		psDroid->actionStarted = gameTime + MIN_SULK_TIME + (gameRand(MAX_SULK_TIME - MIN_SULK_TIME));

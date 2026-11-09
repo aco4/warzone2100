@@ -203,13 +203,6 @@ struct DROID : public BASE_OBJECT
 	int32_t			heightAboveMap;					///< Current calculated height above the terrain (set for VTOL-propulsion units)
 	/* repair data */
 	uint16_t		underRepair;					///< Number of other droids / structures currently repairing this unit (does not include self-repair tech)
-	/* Targets that the droid recently failed to reach when looking for something to repair / help build on its own initiative */
-	struct UnreachableTarget
-	{
-		uint32_t    id;                             ///< Object id of the target
-		uint32_t    expiryTime;                     ///< Game time after which the target may be considered again
-	};
-	std::vector<UnreachableTarget> unreachableTargets;
 };
 
 #endif // __INCLUDED_DROIDDEF_H__

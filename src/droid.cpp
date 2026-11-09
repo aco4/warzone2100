@@ -23,8 +23,6 @@
  * Droid method functions.
  *
  */
-#include <algorithm>
-
 #include "lib/framework/frame.h"
 #include "lib/framework/math_ext.h"
 #include "lib/framework/geometry.h"
@@ -3925,45 +3923,6 @@ int droidSqDist(const DROID *psDroid, const BASE_OBJECT *psObj)
 		return -1;
 	}
 	return objPosDiffSq(psDroid->pos, psObj->pos);
-}
-
-// How long a droid ignores an automatic repair / help-build target that it failed to reach
-#define UNREACHABLE_TARGET_FORGET_TIME (30 * GAME_TICKS_PER_SEC)
-
-static void droidForgetExpiredUnreachableTargets(DROID *psDroid)
-{
-	auto &targets = psDroid->unreachableTargets;
-	targets.erase(std::remove_if(targets.begin(), targets.end(), [](const DROID::UnreachableTarget &target) {
-		return gameTime >= target.expiryTime;
-	}), targets.end());
-}
-
-void droidMarkTargetUnreachable(DROID *psDroid, const BASE_OBJECT *psObj)
-{
-	ASSERT_OR_RETURN(, psDroid != nullptr && psObj != nullptr, "Bad parameters");
-	droidForgetExpiredUnreachableTargets(psDroid);
-	const uint32_t expiryTime = gameTime + UNREACHABLE_TARGET_FORGET_TIME;
-	for (auto &target : psDroid->unreachableTargets)
-	{
-		if (target.id == psObj->id)
-		{
-			target.expiryTime = expiryTime;
-			return;
-		}
-	}
-	psDroid->unreachableTargets.push_back({psObj->id, expiryTime});
-}
-
-bool droidIsTargetUnreachable(DROID *psDroid, const BASE_OBJECT *psObj)
-{
-	if (psDroid->unreachableTargets.empty())
-	{
-		return false;
-	}
-	droidForgetExpiredUnreachableTargets(psDroid);
-	return std::any_of(psDroid->unreachableTargets.begin(), psDroid->unreachableTargets.end(), [psObj](const DROID::UnreachableTarget &target) {
-		return target.id == psObj->id;
-	});
 }
 
 BODY_STATS* DROID::getBodyStats() const
