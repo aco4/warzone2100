@@ -46,6 +46,7 @@
 #include "profiling.h"
 #include "game_world.h"
 #include "perfcounters.h"
+#include "action.h"
 
 // If the path finding system is shutdown or not
 static volatile bool fpathQuit = false;
@@ -736,6 +737,29 @@ queuePathfinding:
 }
 
 
+/// Whether a droid with no build or repair order of its own is moving to a structure it picked for itself to
+/// repair or help build (checkForDamagedStruct). Such a droid refuses a partial route, as explicit build and
+/// repair orders already do: a partial route stops it short of a target that has been walled off since it
+/// was picked, the action code sends it back toward the target, and the blocked watchdog reroutes it to the
+/// same spot for good. A refused route makes it sulk instead, and the target it sulks at is not picked again
+/// straight away.
+/// Not for a build while trucks may build from here (PF_BUILD_FROM_HERE): that needs the partial route to
+/// bring the truck within reach of the zone it may build from.
+static bool fpathDroidMovingToSelfPickedWork(const DROID *psDroid)
+{
+	switch (psDroid->action)
+	{
+	case DACTION_MOVETOREPAIR:
+	case DACTION_REPAIR:
+		return true;
+	case DACTION_MOVETOBUILD:
+	case DACTION_BUILD:
+		return !pathfindingBuildFromHereEnabled();
+	default:
+		return false;
+	}
+}
+
 /// The A* planner this file implements, behind the backend interface.
 /// The search, the worker pool, the job queue and the context cache stay
 /// in the free functions above and in astar.cpp. This class owns the
@@ -793,7 +817,7 @@ protected:
 			acceptNearest = false;
 			break;
 		default:
-			acceptNearest = true;
+			acceptNearest = !fpathDroidMovingToSelfPickedWork(psDroid);
 			break;
 		}
 		return fpathRoute(mapState, &psDroid->sMove, psDroid->id, startPos.x, startPos.y, endPos.x, endPos.y, psPropStats->propulsionType,
