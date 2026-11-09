@@ -554,19 +554,60 @@ bool actionReachedDroid(DROID const *psDroid, DROID const *psOther)
 }
 
 
+StructureBounds actionBuildPosBounds(int x, int y, uint16_t dir, BASE_STATS const *psStats)
+{
+	ASSERT_OR_RETURN(StructureBounds(), psStats != nullptr, "Bad stat");
+	StructureBounds b = getStructureBounds(psStats, Vector2i(x, y), dir);
+	return StructureBounds(b.map - Vector2i(1, 1), b.size + Vector2i(2, 2));
+}
+
+/// Whether the droid's build or repair action carries out an order for that work.
+/// If not, it is work the droid picked for itself while it had nothing else to do (tryDoRepairlikeAction).
+static bool actionWorkIsOrdered(DROID const *psDroid)
+{
+	switch (psDroid->order.type)
+	{
+	case DORDER_BUILD:
+	case DORDER_LINEBUILD:
+	case DORDER_HELPBUILD:
+	case DORDER_REPAIR:
+	case DORDER_DEMOLISH:
+	case DORDER_RESTORE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/// A droid that should be at its build or repair target has stopped short of it: send it there again.
+/// Only for ordered work. Work the droid picked for itself is dropped instead, and the pick decides afresh
+/// (checkForDamagedStruct), since it takes only what the droid can get to. Driving at a target that was walled off
+/// after it was picked would end short of it every time.
+static void actionResumeMoveToWork(DROID *psDroid)
+{
+	if (actionWorkIsOrdered(psDroid))
+	{
+		moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+	}
+	else
+	{
+		objTrace(psDroid->id, "Stopped short of work it picked for itself - dropping it");
+		psDroid->action = DACTION_NONE;
+	}
+}
+
 // check whether a droid is in the neighboring tile to a build position
 bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t dir, BASE_STATS const *psStats)
 {
 	ASSERT_OR_RETURN(false, psStats != nullptr && psDroid != nullptr, "Bad stat or droid");
 	CHECK_DROID(psDroid);
 
-	StructureBounds b = getStructureBounds(psStats, Vector2i(x, y), dir);
-
 	// do all calculations in half tile units so that
 	// the droid moves to within half a tile of the target
 	// NOT ANY MORE - JOHN
+	StructureBounds b = actionBuildPosBounds(x, y, dir, psStats);
 	Vector2i delta = map_coord(psDroid->pos.xy()) - b.map;
-	return delta.x >= -1 && delta.x <= b.size.x && delta.y >= -1 && delta.y <= b.size.y;
+	return delta.x >= 0 && delta.x < b.size.x && delta.y >= 0 && delta.y < b.size.y;
 }
 
 // How long a truck may be blocked on its way to a build site before it may build from where it is
@@ -1793,7 +1834,7 @@ void actionUpdateDroid(DROID *psDroid)
 		else if (DROID_STOPPED(psDroid))
 		{
 			objTrace(psDroid->id, "DACTION_MOVETOBUILD: Starting to drive toward construction site - move status was %d", (int)psDroid->sMove.Status);
-			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+			actionResumeMoveToWork(psDroid);
 		}
 		break;
 	case DACTION_BUILD:
@@ -1814,7 +1855,11 @@ void actionUpdateDroid(DROID *psDroid)
 		    !actionCanBuildFromHere(psDroid, psDroid->actionPos.x, psDroid->actionPos.y, order->direction, order->psStats))
 		{
 			objTrace(psDroid->id, "DACTION_BUILD: Starting to drive toward construction site");
-			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+			actionResumeMoveToWork(psDroid);
+			if (psDroid->action == DACTION_NONE)
+			{
+				break;
+			}
 		}
 		else if (!DROID_STOPPED(psDroid) &&
 		         psDroid->sMove.Status != MOVETURNTOTARGET &&
@@ -1915,7 +1960,7 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 		else if (DROID_STOPPED(psDroid))
 		{
-			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+			actionResumeMoveToWork(psDroid);
 		}
 		break;
 
@@ -1952,7 +1997,7 @@ void actionUpdateDroid(DROID *psDroid)
 			if (order->type != DORDER_HOLD && (!secHoldActive || (secHoldActive && order->type != DORDER_NONE)))
 			{
 				objTrace(psDroid->id, "Secondary order: Go to construction site");
-				moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+				actionResumeMoveToWork(psDroid);
 			}
 			else
 			{
