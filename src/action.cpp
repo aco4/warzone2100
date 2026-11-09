@@ -579,10 +579,12 @@ static bool actionWorkIsOrdered(DROID const *psDroid)
 	}
 }
 
-/// A droid that should be at its build or repair target has stopped short of it: send it there again.
+/// A droid on its way to a build or repair target (a DACTION_MOVETO... action) has stopped short of it: send it there again.
 /// Only for ordered work. Work the droid picked for itself is dropped instead, and the pick decides afresh
 /// (checkForDamagedStruct), since it takes only what the droid can get to. Driving at a target that was walled off
 /// after it was picked would end short of it every time.
+/// Not for a droid already in the working action (DACTION_BUILD, DACTION_REPAIR): a truck with the hold secondary and
+/// a guard or patrol order starts self-picked repairs in DACTION_REPAIR, and makes its first move from there.
 static void actionResumeMoveToWork(DROID *psDroid)
 {
 	if (actionWorkIsOrdered(psDroid))
@@ -1855,11 +1857,7 @@ void actionUpdateDroid(DROID *psDroid)
 		    !actionCanBuildFromHere(psDroid, psDroid->actionPos.x, psDroid->actionPos.y, order->direction, order->psStats))
 		{
 			objTrace(psDroid->id, "DACTION_BUILD: Starting to drive toward construction site");
-			actionResumeMoveToWork(psDroid);
-			if (psDroid->action == DACTION_NONE)
-			{
-				break;
-			}
+			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
 		}
 		else if (!DROID_STOPPED(psDroid) &&
 		         psDroid->sMove.Status != MOVETURNTOTARGET &&
@@ -1997,7 +1995,7 @@ void actionUpdateDroid(DROID *psDroid)
 			if (order->type != DORDER_HOLD && (!secHoldActive || (secHoldActive && order->type != DORDER_NONE)))
 			{
 				objTrace(psDroid->id, "Secondary order: Go to construction site");
-				actionResumeMoveToWork(psDroid);
+				moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
 			}
 			else
 			{
