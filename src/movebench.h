@@ -62,6 +62,7 @@ struct MovementMetrics
 	uint64_t shuffles = 0;      ///< moveShuffleDroid put a parked droid into MOVESHUFFLE
 	uint64_t shufflesNowhere = 0; ///< moveShuffleDroid found nowhere for the parked droid to go
 	uint64_t stillBumps = 0;    ///< a droid standing still with no bump clock was given one
+	uint64_t autoWorkPicks = 0; ///< an idle truck picked a structure to repair or help build by itself (checkForDamagedStruct)
 	std::map<uint32_t, uint32_t> hardStopsByDroid; ///< per-droid hard stops, feeds the concentration fields
 };
 

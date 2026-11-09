@@ -184,6 +184,11 @@ const BenchScenario scenarios[] =
 	{ "gamestate_rewind",    "movebench_gamestate_rewind.json",      600, 0x5EEDBEEF, false },
 	// Not a benchmark: grid readers and objects that died earlier in the same tick (prints deadgrid: lines).
 	{ "dead_grid",           "movebench_dead_grid.json",             200, 0x5EEDBEEF, false },
+	// Not benchmarks: idle trucks picking work they can or cannot get to (prints repairpick: lines, tests/gamestate/repairpick.sh).
+	{ "repair_reach",        "movebench_repair_reach.json",          270, 0x5EEDBEEF, false },
+	{ "repair_walled",       "movebench_repair_walled.json",         270, 0x5EEDBEEF, false },
+	{ "repair_hold",         "movebench_repair_hold.json",           270, 0x5EEDBEEF, false },
+	{ "helpbuild_walled",    "movebench_helpbuild_walled.json",      270, 0x5EEDBEEF, false },
 };
 
 optional<uint32_t> seedOverride;
@@ -663,6 +668,7 @@ void writeScorecard(bool completed)
 	card["shuffles"] = metrics.shuffles;
 	card["shufflesNowhere"] = metrics.shufflesNowhere;
 	card["stillBumps"] = metrics.stillBumps;
+	card["autoWorkPicks"] = metrics.autoWorkPicks;
 	card["pauseTicks"] = pauseTicks;
 	card["strandedPauseTicks"] = strandedPauseTicks;
 	card["overlapPairTicks"] = overlapPairTicks;

@@ -164,6 +164,9 @@ fi
 if echo "deadgrid" | grep -qE "$FILTER"; then
 	"$HERE/deadgrid.sh" "$BIN" | head -1
 fi
+if echo "repairpick" | grep -qE "$FILTER"; then
+	"$HERE/repairpick.sh" "$BIN" | grep -v '^  '
+fi
 if echo "camtakeover" | grep -qE "$FILTER"; then
 	"$HERE/camtakeover.sh" "$BIN" | grep -v '^  '
 fi
