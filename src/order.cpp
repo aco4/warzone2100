@@ -314,6 +314,7 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 		STRUCTURE *structure = castStructure(object);
 		if (structure == nullptr ||  // Must be a structure.
 		    structure == psFailedTarget ||  // Must not have just failed to reach it.
+		    droidIsTargetUnreachable(psDroid, structure) ||  // Must not have recently failed to get close enough to it.
 		    distanceSq > bestDistanceSq ||  // Must be as close as possible.
 		    !visibleObject(psDroid, structure, false) ||  // Must be able to sense it.
 		    !aiCheckAlliances(psDroid->player, structure->player) ||  // Must be a friendly structure.

@@ -418,6 +418,13 @@ void checkDroid(const DROID *droid, const char *const location_description, cons
 /** If droid can get to given object using its current propulsion, return the square distance. Otherwise return -1. */
 int droidSqDist(const DROID *psDroid, const BASE_OBJECT *psObj);
 
+/** Remember that the droid could not get close enough to the given object to work on it, so that it is not
+ *  picked again as an automatic repair / help-build target for a while. */
+void droidMarkTargetUnreachable(DROID *psDroid, const BASE_OBJECT *psObj);
+
+/** Returns true if the droid recently failed to reach the given object (see droidMarkTargetUnreachable). */
+bool droidIsTargetUnreachable(DROID *psDroid, const BASE_OBJECT *psObj);
+
 // Minimum damage a weapon will deal to its target
 #define	MIN_WEAPON_DAMAGE	1
 

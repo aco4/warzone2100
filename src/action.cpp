@@ -569,6 +569,31 @@ bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t dir, BAS
 }
 
 
+/** A droid that decided on its own (i.e. without an explicit order) to repair or help build a structure has
+ *  stopped moving without getting close enough to it. The pathfinder only got it as close as possible, so the
+ *  structure cannot actually be reached (e.g. it is walled in). Give up on it and remember not to pick it again
+ *  for a while, so the droid can work on other structures instead of trying to reach this one forever.
+ *  Returns true if the action was abandoned. */
+static bool actionAbandonUnreachableAutoTarget(DROID *psDroid, const BASE_OBJECT *psTarget)
+{
+	if (psDroid->order.type != DORDER_NONE && psDroid->order.type != DORDER_HOLD)
+	{
+		return false;  // Explicitly ordered, keep trying.
+	}
+	if (psDroid->sMove.Status != MOVEINACTIVE)
+	{
+		return false;  // Still waiting for a route, or just shuffling out of the way of another droid.
+	}
+	objTrace(psDroid->id, "Could not get close enough to automatic target %u - giving up on it", psTarget ? psTarget->id : 0);
+	if (psTarget != nullptr)
+	{
+		droidMarkTargetUnreachable(psDroid, psTarget);
+	}
+	psDroid->action = DACTION_NONE;
+	setDroidActionTarget(psDroid, nullptr, 0);
+	return true;
+}
+
 // check if a droid is on the foundations of a new building
 static bool actionRemoveDroidsFromBuildPos(unsigned player, Vector2i pos, uint16_t dir, BASE_STATS *psStats)
 {
@@ -1726,6 +1751,10 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 		else if (DROID_STOPPED(psDroid))
 		{
+			if (actionAbandonUnreachableAutoTarget(psDroid, getTileStructure(gameWorld.map, map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y))))
+			{
+				break;
+			}
 			objTrace(psDroid->id, "DACTION_MOVETOBUILD: Starting to drive toward construction site - move status was %d", (int)psDroid->sMove.Status);
 			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
 		}
@@ -1848,6 +1877,10 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 		else if (DROID_STOPPED(psDroid))
 		{
+			if (actionAbandonUnreachableAutoTarget(psDroid, psDroid->psActionTarget[0]))
+			{
+				break;
+			}
 			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
 		}
 		break;
@@ -1889,6 +1922,8 @@ void actionUpdateDroid(DROID *psDroid)
 			}
 			else
 			{
+				// Holding position and out of reach - don't keep picking this target over ones that are in reach.
+				droidMarkTargetUnreachable(psDroid, psDroid->psActionTarget[0]);
 				psDroid->action = DACTION_NONE;
 			}
 		}
