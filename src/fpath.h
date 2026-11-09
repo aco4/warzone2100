@@ -162,6 +162,31 @@ public:
 	FPathDroidUpdateScope &operator=(FPathDroidUpdateScope &&) = delete;
 };
 
+/// The move type a route for this droid is planned with when moveType is asked for: an AI droid with a weapon
+/// plans FMT_MOVE routes as FMT_ATTACK, to blast its way through. Every route request and reachability query uses it.
+FPATH_MOVETYPE fpathDroidMoveType(const DROID *psDroid, FPATH_MOVETYPE moveType);
+
+/// The tiles of a square window a droid can drive to, as found by fpathDroidReachableTiles.
+struct FPathReachableTiles
+{
+	Vector2i origin = Vector2i(0, 0);  ///< Top left tile of the window.
+	int width = 0;
+	int height = 0;
+	std::vector<uint8_t> flags;        ///< One 0/1 per tile of the window, row by row.
+
+	/// Whether the droid can drive to this tile. Any tile outside the window reads as out of reach.
+	bool reachable(Vector2i tile) const;
+};
+
+/** Which tiles within radius tiles of a droid (a square window, clipped to the map) it can drive to without leaving the window.
+ *
+ *  Main thread only. Sets up the search exactly as a route request for the droid would (propulsion, owner, droid type,
+ *  move type, start tile and this tick's blocking map), so it answers whether a route could get there, and it is
+ *  deterministic and reads only synced state. Note it builds this tick's blocking map for the droid if no route has yet.
+ *  A tile reachable only by a detour that leaves the window counts as out of reach.
+ */
+void fpathDroidReachableTiles(const DROID *psDroid, int radius, FPathReachableTiles &out);
+
 /** Quick O(1) test of whether it is theoretically possible to go from origin to destination
  *  using the given propulsion type. orig and dest are in world coordinates. */
 bool fpathCheck(WorldMapState& mapState, Position orig, Position dest, PROPULSION_TYPE propulsion);

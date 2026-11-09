@@ -42,14 +42,14 @@ enum Counter : unsigned
 	T_droidUpdate, T_moveUpdateDroid, T_moveCalcDroidSlide, T_moveCheckSquished, T_steeringScan,
 	T_aiBestNearestTarget, T_aiChooseTargetStruct, T_aiChooseTargetDroid, T_structureUpdate, T_projUpdateAll, T_projInFlight,
 	T_checkForDamagedStruct,
-	T_fpathRoute, T_fpathRouteWait, T_fpathSetBlockingMap, T_fpathAStarRoute, T_corridorGateUpdate,
+	T_fpathRoute, T_fpathRouteWait, T_fpathSetBlockingMap, T_fpathAStarRoute, T_fpathAStarReachableTiles, T_corridorGateUpdate,
 	T_congestionOverlay, T_objmemUpdate, T_checkReferences,
 	// nanoseconds accumulated on the render side, over whatever frames fall between two CSV lines
 	T_displayDynamicObjects, T_display3DProjectiles, T_processEffects, T_bucketSort,
 	T_renderEffects,
 	// counts
 	C_gridQueries, C_gridResultsReturned, C_rayCasts, C_fireLineTraces, C_pathJobsQueued, C_pathPollsNotReady,
-	C_pathContextsAllocated, C_blockingMapsBuilt, C_effectsAlive, C_projectilesAlive, C_droidsAlive, C_structuresAlive,
+	C_pathContextsAllocated, C_blockingMapsBuilt, C_reachabilityQueries, C_effectsAlive, C_projectilesAlive, C_droidsAlive, C_structuresAlive,
 	C_framesDrawn,
 	NUM_COUNTERS
 };

@@ -47,6 +47,7 @@
 #include "map.h"
 #endif
 
+#include <climits>
 #include <list>
 #include <vector>
 #include <algorithm>
@@ -166,12 +167,37 @@ struct PathNonblockingArea
 	int16_t y2 = 0;
 };
 
+/// The rectangle of tiles a search may enter, half-open. Tiles outside it count as blocked.
+/// The default is unbounded, which leaves the map edge as the only limit, so routing is unaffected.
+struct PathSearchArea
+{
+	PathSearchArea() {}
+	PathSearchArea(const PathTileArea &a) : x1(a.x1), x2(a.x2), y1(a.y1), y2(a.y2) {}
+	bool operator ==(PathSearchArea const &z) const
+	{
+		return x1 == z.x1 && x2 == z.x2 && y1 == z.y1 && y2 == z.y2;
+	}
+	bool contains(int x, int y) const
+	{
+		return x >= x1 && x < x2 && y >= y1 && y < y2;
+	}
+
+	int x1 = INT_MIN;
+	int x2 = INT_MAX;
+	int y1 = INT_MIN;
+	int y2 = INT_MAX;
+};
+
 // Data structures used for pathfinding, can contain cached results.
 struct PathfindContext
 {
 	PathfindContext() : myGameTime(0), iteration(0), blockingMap(nullptr) {}
 	bool isBlocked(int x, int y) const
 	{
+		if (!searchArea.contains(x, y))
+		{
+			return true;  // Outside the area this search is confined to (only ever set for a reachability query).
+		}
 		if (dstIgnore.isNonblocking(x, y))
 		{
 			return false;  // The path is actually blocked here by a structure, but ignore it since it's where we want to go (or where we came from).
@@ -188,10 +214,15 @@ struct PathfindContext
 		// Must check myGameTime == blockingMap_->type.gameTime, otherwise blockingMap could be a deleted pointer which coincidentally compares equal to the valid pointer blockingMap_.
 		// The overlay pointer is part of the key too, so a context built for one cohort's traffic is never reused for another's.
 		// So is the group, whose flow the search leaves out.
-		return myGameTime == blockingMap_->type.gameTime && blockingMap == blockingMap_ && overlay == overlay_ && groupKey == groupKey_ && tileS == tileS_ && dstIgnore == dstIgnore_;
+		// Routes are only ever searched unconfined. The confined reachability context lives apart from the route caches
+		// (see fpathAStarReachableTiles), but a context confined to an area must never answer a route even so.
+		return myGameTime == blockingMap_->type.gameTime && blockingMap == blockingMap_ && overlay == overlay_ && groupKey == groupKey_ && tileS == tileS_ && dstIgnore == dstIgnore_
+		       && searchArea == PathSearchArea();
 	}
-	void assign(const std::shared_ptr<const PathBlockingMap> &blockingMap_, const std::shared_ptr<const DynamicCostOverlay> &overlay_, const std::shared_ptr<const GroupFlowMap> &groupFlow_, uint32_t groupKey_, PathCoord tileS_, PathNonblockingArea dstIgnore_)
+	void assign(const std::shared_ptr<const PathBlockingMap> &blockingMap_, const std::shared_ptr<const DynamicCostOverlay> &overlay_, const std::shared_ptr<const GroupFlowMap> &groupFlow_, uint32_t groupKey_, PathCoord tileS_, PathNonblockingArea dstIgnore_,
+	            PathSearchArea searchArea_ = PathSearchArea())
 	{
+		searchArea = searchArea_;
 		blockingMap = blockingMap_;
 		overlay = overlay_;
 		groupFlow = groupFlow_;
@@ -228,6 +259,7 @@ struct PathfindContext
 	std::shared_ptr<const GroupFlowMap> groupFlow;      ///< The searching droid's group's flow, or null.
 	uint32_t        groupKey = 0;       ///< groupFlow's key, or 0.
 	PathNonblockingArea dstIgnore;      ///< Area of structure at destination which should be considered nonblocking.
+	PathSearchArea  searchArea;         ///< Tiles the search may enter, unbounded except for a reachability query.
 };
 
 /// Lists of blocking maps from current tick.
@@ -249,9 +281,14 @@ static const Vector2i aDirOffset[] =
 	Vector2i(1, 1),
 };
 
+/// The context fpathAStarReachableTiles searches in. Main thread only, and never one of the path threads'
+/// contexts, so a reachability query can neither race a route search nor leave a confined context in a route cache.
+static PathfindContext fpathReachContext;
+
 void fpathHardTableReset()
 {
 	fpathBlockingMaps.clear();
+	fpathReachContext = PathfindContext();
 }
 
 /** Get the nearest entry in the open list
@@ -533,9 +570,10 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 	return nearestCoord;
 }
 
-static void fpathInitContext(PathfindContext &context, const PATHJOB &job, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore)
+static void fpathInitContext(PathfindContext &context, const PATHJOB &job, PathCoord tileS, PathCoord tileRealS, PathCoord tileF, PathNonblockingArea dstIgnore,
+                             PathSearchArea searchArea = PathSearchArea())
 {
-	context.assign(job.blockingMap, job.overlay, job.groupFlow, job.groupKey, tileS, dstIgnore);
+	context.assign(job.blockingMap, job.overlay, job.groupFlow, job.groupKey, tileS, dstIgnore, searchArea);
 
 	// Add the start point to the open list
 	fpathNewNode(context, tileF, tileRealS, 0, tileRealS);
@@ -1155,6 +1193,44 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 	}
 
 	return retval;
+}
+
+void fpathAStarReachableTiles(const PATHJOB &job, const PathTileArea &area, std::vector<uint8_t> &reachable)
+{
+	WZ_PERF_SCOPE(T_fpathAStarReachableTiles);
+	ASSERT(job.blockingMap != nullptr, "Reachability query with no blocking map");
+	ASSERT(job.overlay == nullptr && job.groupFlow == nullptr, "Reachability query with a cost overlay");  // Costs only, they cannot change what is reachable.
+	const int width = std::max(area.x2 - area.x1, 0);
+	const int height = std::max(area.y2 - area.y1, 0);
+	reachable.assign(static_cast<size_t>(width) * static_cast<size_t>(height), 0);
+	ASSERT_OR_RETURN(, area.x1 >= 0 && area.y1 >= 0 && area.x2 <= gameWorld.map.width && area.y2 <= gameWorld.map.height, "Reachability area off the map");
+	const PathCoord tileOrig(map_coord(job.origX), map_coord(job.origY));
+	if (job.blockingMap == nullptr || !PathSearchArea(area).contains(tileOrig.x, tileOrig.y))
+	{
+		return;
+	}
+
+	// Explore toward a tile outside the area. Nothing outside can be entered, so the target is never reached,
+	// and the search runs until it has visited every tile reachable from the start without leaving the area.
+	// The order it visits them in has no effect on which it visits.
+	const PathCoord tileUnreachable(area.x1 - 1, area.y1 - 1);
+	PathfindContext &context = fpathReachContext;
+	fpathInitContext(context, job, tileOrig, tileOrig, tileUnreachable, PathNonblockingArea(), PathSearchArea(area));
+	fpathAStarExplore(context, tileUnreachable);
+
+	for (int y = area.y1; y < area.y2; ++y)
+	{
+		for (int x = area.x1; x < area.x2; ++x)
+		{
+			const PathExploredTile &tile = context.map[x + y * gameWorld.map.width];
+			reachable[(x - area.x1) + (y - area.y1) * width] = tile.iteration == context.iteration && tile.visited;
+		}
+	}
+	WZ_PERF_COUNT(C_reachabilityQueries, 1);
+
+	// Don't keep this tick's blocking map alive until the next query.
+	context.blockingMap = nullptr;
+	context.nodes.clear();
 }
 
 void fpathSetBlockingMap(PATHJOB *psJob)

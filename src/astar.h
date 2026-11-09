@@ -24,6 +24,7 @@
 #include "fpath.h"
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 /** Counts nodes expanded by the search, for the pathfinding benchmark.
  *
@@ -75,6 +76,25 @@ std::shared_ptr<FPathExecuteContext> makeFPathExecuteContext();
  *  @ingroup pathfinding
  */
 ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE_CONTROL *psMove, PATHJOB *psJob);
+
+/// A rectangle of map tiles, half-open: x1 <= x < x2, y1 <= y < y2.
+struct PathTileArea
+{
+	int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+};
+
+/** Which tiles of an area can be reached from the job's start without leaving the area.
+ *
+ *  Main thread only. Runs the route search from the start tile toward a target it can never reach, so it visits
+ *  every tile reachable inside the area, and fills reachable with one 0/1 flag per tile of the area, row by row.
+ *  The job needs its start, propulsion, owner, move type and blocking map set exactly as for a route
+ *  (fpathSetBlockingMap), and no cost overlay or group flow: those change costs, not what can be reached.
+ *  A tile reachable only by a detour that leaves the area counts as unreachable. The area must lie on the map.
+ *
+ *  Searches in a context of its own, never in one of the path threads' contexts. Reads only the blocking map,
+ *  so the result is the same on every client.
+ */
+void fpathAStarReachableTiles(const PATHJOB &job, const PathTileArea &area, std::vector<uint8_t> &reachable);
 
 /// Call from main thread.
 /// Sets psJob->blockingMap for later use by pathfinding thread, generating the required map if not already generated.

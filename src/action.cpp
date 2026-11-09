@@ -554,19 +554,31 @@ bool actionReachedDroid(DROID const *psDroid, DROID const *psOther)
 }
 
 
+StructureBounds actionBuildZone(int x, int y, uint16_t dir, BASE_STATS const *psStats, int ring)
+{
+	ASSERT_OR_RETURN(StructureBounds(), psStats != nullptr, "Bad stat");
+	StructureBounds b = getStructureBounds(psStats, Vector2i(x, y), dir);
+	return StructureBounds(b.map - Vector2i(ring, ring), b.size + Vector2i(2 * ring, 2 * ring));
+}
+
+bool actionTileInBuildZone(Vector2i tile, int x, int y, uint16_t dir, BASE_STATS const *psStats, int ring)
+{
+	ASSERT_OR_RETURN(false, psStats != nullptr, "Bad stat");
+	StructureBounds zone = actionBuildZone(x, y, dir, psStats, ring);
+	Vector2i delta = tile - zone.map;
+	return delta.x >= 0 && delta.x < zone.size.x && delta.y >= 0 && delta.y < zone.size.y;
+}
+
 // check whether a droid is in the neighboring tile to a build position
 bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t dir, BASE_STATS const *psStats)
 {
 	ASSERT_OR_RETURN(false, psStats != nullptr && psDroid != nullptr, "Bad stat or droid");
 	CHECK_DROID(psDroid);
 
-	StructureBounds b = getStructureBounds(psStats, Vector2i(x, y), dir);
-
 	// do all calculations in half tile units so that
 	// the droid moves to within half a tile of the target
 	// NOT ANY MORE - JOHN
-	Vector2i delta = map_coord(psDroid->pos.xy()) - b.map;
-	return delta.x >= -1 && delta.x <= b.size.x && delta.y >= -1 && delta.y <= b.size.y;
+	return actionTileInBuildZone(map_coord(psDroid->pos.xy()), x, y, dir, psStats, ACTION_BUILD_RING);
 }
 
 // How long a truck may be blocked on its way to a build site before it may build from where it is
@@ -589,9 +601,7 @@ bool actionCanBuildFromHere(DROID const *psDroid, int x, int y, uint16_t dir, ST
 	{
 		return false;
 	}
-	StructureBounds b = getStructureBounds(psStats, Vector2i(x, y), dir);
-	Vector2i delta = map_coord(psDroid->pos.xy()) - b.map;
-	return delta.x >= -2 && delta.x <= b.size.x + 1 && delta.y >= -2 && delta.y <= b.size.y + 1;
+	return actionTileInBuildZone(map_coord(psDroid->pos.xy()), x, y, dir, psStats, ACTION_BUILD_FROM_HERE_RING);
 }
 
 

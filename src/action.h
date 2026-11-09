@@ -98,6 +98,19 @@ bool actionInRange(const DROID *psDroid, const BASE_OBJECT *psObj, int weapon_sl
 /** Return whether a droid can see a target to fire on it. */
 bool actionVisibleTarget(DROID *psDroid, BASE_OBJECT *psTarget, int weapon_slot);
 
+/// How many tiles around a structure's footprint a droid may stand to count as at it (actionReachedBuildPos).
+#define ACTION_BUILD_RING 1
+/// How many tiles around the footprint a stopped or blocked truck may join a build already under way from (actionCanBuildFromHere).
+#define ACTION_BUILD_FROM_HERE_RING 2
+
+/** The tiles a structure of these stats would cover at (x, y) facing dir, grown by ring tiles on every side. */
+StructureBounds actionBuildZone(int x, int y, uint16_t dir, BASE_STATS const *psStats, int ring);
+
+/** Whether a tile lies in the footprint a structure of these stats would have at (x, y) facing dir, or within ring tiles of it.
+ *  The one bounds test behind actionReachedBuildPos (ring ACTION_BUILD_RING) and actionCanBuildFromHere (ring ACTION_BUILD_FROM_HERE_RING),
+ *  shared so that code choosing work for a droid judges "close enough" exactly as the action code does. */
+bool actionTileInBuildZone(Vector2i tile, int x, int y, uint16_t dir, BASE_STATS const *psStats, int ring);
+
 /** Check whether a droid is in the neighboring tile to a build position. */
 bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t direction, BASE_STATS const *psStats);
 
