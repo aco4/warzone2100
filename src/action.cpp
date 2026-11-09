@@ -569,29 +569,20 @@ bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t dir, BAS
 }
 
 
-/** A droid that decided on its own (i.e. without an explicit order) to repair or help build a structure has
- *  stopped moving without getting close enough to it. The pathfinder only got it as close as possible, so the
- *  structure cannot actually be reached (e.g. it is walled in). Give up on it and remember not to pick it again
- *  for a while, so the droid can work on other structures instead of trying to reach this one forever.
- *  Returns true if the action was abandoned. */
-static bool actionAbandonUnreachableAutoTarget(DROID *psDroid, const BASE_OBJECT *psTarget)
+/** Actions where the droid moves to a structure in order to work on it, and so must get right next to it.
+ *  Getting "as close as possible" is of no use for these. */
+bool actionMovesToStructureSite(DROID_ACTION action)
 {
-	if (psDroid->order.type != DORDER_NONE && psDroid->order.type != DORDER_HOLD)
+	switch (action)
 	{
-		return false;  // Explicitly ordered, keep trying.
+		case DACTION_MOVETOBUILD:
+		case DACTION_BUILD:
+		case DACTION_MOVETOREPAIR:
+		case DACTION_REPAIR:
+			return true;
+		default:
+			return false;
 	}
-	if (psDroid->sMove.Status != MOVEINACTIVE)
-	{
-		return false;  // Still waiting for a route, or just shuffling out of the way of another droid.
-	}
-	objTrace(psDroid->id, "Could not get close enough to automatic target %u - giving up on it", psTarget ? psTarget->id : 0);
-	if (psTarget != nullptr)
-	{
-		droidMarkTargetUnreachable(psDroid, psTarget);
-	}
-	psDroid->action = DACTION_NONE;
-	setDroidActionTarget(psDroid, nullptr, 0);
-	return true;
 }
 
 // check if a droid is on the foundations of a new building
@@ -1751,10 +1742,6 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 		else if (DROID_STOPPED(psDroid))
 		{
-			if (actionAbandonUnreachableAutoTarget(psDroid, getTileStructure(gameWorld.map, map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y))))
-			{
-				break;
-			}
 			objTrace(psDroid->id, "DACTION_MOVETOBUILD: Starting to drive toward construction site - move status was %d", (int)psDroid->sMove.Status);
 			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
 		}
@@ -1877,10 +1864,6 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 		else if (DROID_STOPPED(psDroid))
 		{
-			if (actionAbandonUnreachableAutoTarget(psDroid, psDroid->psActionTarget[0]))
-			{
-				break;
-			}
 			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
 		}
 		break;
@@ -2609,6 +2592,16 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 		}
 		break;
 	case DACTION_SULK:
+		if (actionMovesToStructureSite(priorDroidAction))
+		{
+			// The pathfinder could not find a way to the structure we were going to work on (e.g. it is walled in).
+			// Remember that, so we don't keep picking it when looking for something to repair or help build.
+			if (STRUCTURE *psStruct = getTileStructure(gameWorld.map, map_coord(psDroid->actionPos.x), map_coord(psDroid->actionPos.y)))
+			{
+				objTrace(psDroid->id, "Could not route to structure %u - marking it unreachable", psStruct->id);
+				droidMarkTargetUnreachable(psDroid, psStruct);
+			}
+		}
 		psDroid->action = DACTION_SULK;
 		// hmmm, hope this doesn't cause any problems!
 		psDroid->actionStarted = gameTime + MIN_SULK_TIME + (gameRand(MAX_SULK_TIME - MIN_SULK_TIME));

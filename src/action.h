@@ -93,6 +93,9 @@ bool actionInRange(const DROID *psDroid, const BASE_OBJECT *psObj, int weapon_sl
 bool actionVisibleTarget(DROID *psDroid, BASE_OBJECT *psTarget, int weapon_slot);
 
 /** Check whether a droid is in the neighboring tile to a build position. */
+/** Returns true for actions where the droid must get right next to a structure to work on it. */
+bool actionMovesToStructureSite(DROID_ACTION action);
+
 bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t direction, BASE_STATS const *psStats);
 
 /** Check that  two droids are next to each other */

@@ -37,6 +37,7 @@
 #include "map.h"
 #include "multiplay.h"
 #include "astar.h"
+#include "action.h"
 
 #include "fpath.h"
 #include "profiling.h"
@@ -578,7 +579,10 @@ FPATH_RETVAL fpathDroidRoute(DROID *psDroid, const WorldMapState& mapState, SDWO
 		acceptNearest = false;
 		break;
 	default:
-		acceptNearest = true;
+		// A droid going to repair or help build a structure on its own initiative (no explicit order) must also
+		// actually reach it. Otherwise a structure it can't reach (e.g. walled in) gets a route to the nearest
+		// point, and the droid keeps driving there and retrying forever instead of finding something else to do.
+		acceptNearest = !actionMovesToStructureSite(psDroid->action);
 		break;
 	}
 	return fpathRoute(mapState, &psDroid->sMove, psDroid->id, startPos.x, startPos.y, endPos.x, endPos.y, psPropStats->propulsionType,
