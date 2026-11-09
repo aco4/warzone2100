@@ -455,6 +455,64 @@ static Position findNonblockingPosition(const WorldMapState& mapState, Position 
 }
 
 
+FPATH_MOVETYPE fpathDroidMoveType(const DROID *psDroid, FPATH_MOVETYPE moveType)
+{
+	// override for AI to blast our way through stuff
+	if (!isHumanPlayer(psDroid->player) && moveType == FMT_MOVE)
+	{
+		moveType = (psDroid->asWeaps[0].nStat == 0) ? FMT_MOVE : FMT_ATTACK;
+	}
+	return moveType;
+}
+
+bool FPathReachableTiles::reachable(Vector2i tile) const
+{
+	if (tile.x < origin.x || tile.y < origin.y || tile.x >= origin.x + width || tile.y >= origin.y + height)
+	{
+		return false;  // Outside the searched window, so treated as out of reach.
+	}
+	return flags[(tile.x - origin.x) + (tile.y - origin.y) * width] != 0;
+}
+
+void fpathDroidReachableTiles(const DROID *psDroid, int radius, FPathReachableTiles &out)
+{
+	out = FPathReachableTiles();
+	const PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
+	ASSERT_OR_RETURN(, psPropStats != nullptr, "invalid propulsion stats pointer");
+
+	// The job a route request for this droid would make (LegacyAStarBackend::routeInternal and fpathRoute),
+	// so the tiles found here are the ones a route could take it to.
+	PATHJOB job;
+	job.propulsion = psPropStats->propulsionType;
+	job.droidType = psDroid->droidType;
+	job.droidID = psDroid->id;
+	job.owner = psDroid->player;
+	job.moveType = fpathDroidMoveType(psDroid, FMT_MOVE);
+	const Position startPos = findNonblockingPosition(gameWorld.map, psDroid->pos, job.propulsion, psDroid->player, job.moveType);
+	job.origX = startPos.x;
+	job.origY = startPos.y;
+	job.destX = startPos.x;
+	job.destY = startPos.y;
+	job.acceptNearest = true;
+	job.deleted = false;
+	fpathSetBlockingMap(&job);
+	// No overlay or group flow: they price tiles, they never make one unreachable.
+
+	const Vector2i centre = map_coord(startPos.xy());
+	PathTileArea area;
+	area.x1 = std::max(centre.x - radius, 0);
+	area.y1 = std::max(centre.y - radius, 0);
+	area.x2 = std::min(centre.x + radius + 1, gameWorld.map.width);
+	area.y2 = std::min(centre.y + radius + 1, gameWorld.map.height);
+	if (area.x1 >= area.x2 || area.y1 >= area.y2)
+	{
+		return;
+	}
+	out.origin = Vector2i(area.x1, area.y1);
+	out.width = area.x2 - area.x1;
+	out.height = area.y2 - area.y1;
+	fpathAStarReachableTiles(job, area, out.flags);
+}
 
 static void fpathSetMove(MOVE_CONTROL *psMoveCntl, SDWORD targetX, SDWORD targetY)
 {
@@ -707,11 +765,7 @@ protected:
 		bool acceptNearest;
 		PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
 
-		// override for AI to blast our way through stuff
-		if (!isHumanPlayer(psDroid->player) && moveType == FMT_MOVE)
-		{
-			moveType = (psDroid->asWeaps[0].nStat == 0) ? FMT_MOVE : FMT_ATTACK;
-		}
+		moveType = fpathDroidMoveType(psDroid, moveType);
 
 		ASSERT_OR_RETURN(FPR_FAILED, psPropStats != nullptr, "invalid propulsion stats pointer");
 		ASSERT_OR_RETURN(FPR_FAILED, psDroid->type == OBJ_DROID, "We got passed an object that isn't a DROID!");
