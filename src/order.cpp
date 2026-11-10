@@ -295,12 +295,6 @@ DROID *findSomeoneToRepair(const DROID *psTurret, int radius)
 	return _findSomeoneToRepair(nullptr, queue, psTurret->pos.x, psTurret->pos.y, radius, psTurret->player);
 }
 
-/// How many tiles past REPAIR_MAXDIST the reachability search behind checkForDamagedStruct looks, so a truck
-/// can find its way round a short obstacle to a structure near the edge of its pick range.
-/// This widens the search window only, never the pick range. A structure the truck could reach only by a detour
-/// that leaves the window is treated as out of reach: a truck with nothing to do should not set off on a long trip.
-static constexpr int REPAIR_REACH_DETOUR_TILES = 3;
-
 namespace
 {
 struct RepairCandidate
@@ -334,6 +328,8 @@ static bool repairCandidateReachable(const PathReachableTiles &reach, const STRU
  *   whatever the structure's size.
  * - Otherwise: one within REPAIR_MAXDIST that it is already close enough to, or can drive close enough to. One search of
  *   the tiles the droid can drive to answers for every candidate, so structures out of reach never hide one in reach.
+ *   The search covers the pick range and no more, so a structure reachable only by a detour that leaves it is
+ *   treated as out of reach: a truck with nothing to do should not set off on a long trip.
  * Candidates at the same distance are taken in ascending object id order, so the choice is the same on every client.
  */
 static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid)
@@ -423,7 +419,7 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 	PathReachableTiles reach;  // Nothing in reach for a truck that may not move.
 	if (!onHold && !candidates.empty())
 	{
-		reach = fpathDroidReachableTiles(psDroid, gameWorld.map, map_coord(REPAIR_MAXDIST) + REPAIR_REACH_DETOUR_TILES);
+		reach = fpathDroidReachableTiles(psDroid, gameWorld.map, map_coord(REPAIR_MAXDIST));
 	}
 	for (const RepairCandidate &candidate : candidates)
 	{
