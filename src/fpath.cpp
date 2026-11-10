@@ -479,11 +479,13 @@ PathReachableTiles fpathDroidReachableTiles(const DROID *psDroid, const WorldMap
 	const FPATH_MOVETYPE moveType = fpathDroidMoveType(psDroid, FMT_MOVE);
 	const Vector2i start = map_coord(findNonblockingPosition(mapState, psDroid->pos, propulsion, owner, moveType).xy());
 
-	const Vector2i origin(std::max(start.x - radius, 0), std::max(start.y - radius, 0));
-	const Vector2i end(std::min(start.x + radius + 1, mapState.width), std::min(start.y + radius + 1, mapState.height));
+	// The window is centred on the droid, not on the start tile, which can be a couple of tiles away.
+	const Vector2i centre = map_coord(psDroid->pos.xy());
+	const Vector2i origin(std::max(centre.x - radius, 0), std::max(centre.y - radius, 0));
+	const Vector2i end(std::min(centre.x + radius + 1, mapState.width), std::min(centre.y + radius + 1, mapState.height));
 	if (start.x < origin.x || start.y < origin.y || start.x >= end.x || start.y >= end.y)
 	{
-		return out;  // The start is off the map.
+		return out;  // The start is off the map or outside the window.
 	}
 	out.origin = origin;
 	out.width = end.x - origin.x;

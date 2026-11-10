@@ -397,26 +397,17 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 	});
 
 	// The straight-line distance and droidSqDist's same-region test say nothing about whether the droid can get next
-	// to a structure (a walled-in one passes both), so find out where the droid can drive. Searched once, when first needed.
-	PathReachableTiles reach;
-	bool searched = false;
+	// to a structure (a walled-in one passes both), so find out where the droid can drive.
+	PathReachableTiles reach;  // Nothing in reach for a truck that may not move.
+	if (!onHold && !candidates.empty())
+	{
+		reach = fpathDroidReachableTiles(psDroid, gameWorld.map, map_coord(REPAIR_MAXDIST) + REPAIR_REACH_DETOUR_TILES);
+	}
 	for (const RepairCandidate &candidate : candidates)
 	{
 		const STRUCTURE *psStruct = candidate.structure;
-		if (actionReachedBuildPos(psDroid, psStruct->pos.x, psStruct->pos.y, psStruct->rot.direction, psStruct->pStructureType))
-		{
-			return {candidate.structure, candidate.action};  // Close enough already.
-		}
-		if (onHold)
-		{
-			continue;  // May not move, so only something it can work on from here.
-		}
-		if (!searched)
-		{
-			reach = fpathDroidReachableTiles(psDroid, gameWorld.map, map_coord(REPAIR_MAXDIST) + REPAIR_REACH_DETOUR_TILES);
-			searched = true;
-		}
-		if (repairCandidateReachable(reach, psStruct))
+		if (actionReachedBuildPos(psDroid, psStruct->pos.x, psStruct->pos.y, psStruct->rot.direction, psStruct->pStructureType)  // Close enough already.
+		    || repairCandidateReachable(reach, psStruct))
 		{
 			return {candidate.structure, candidate.action};
 		}
