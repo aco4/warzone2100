@@ -2748,6 +2748,24 @@ static int highestQueuedModule(DROID const *droid, STRUCTURE const *structure)
 	return module;
 }
 
+/* Looks through the player's list of droids to see if any droid that is not currently
+ * selected is building the specified structure - returns true if one is found */
+static bool checkUnselectedDroidsBuilding(const STRUCTURE *psStructure)
+{
+	for (const DROID *psCurr : gameWorld.objects.droids[psStructure->player])
+	{
+		if (psCurr->selected)
+		{
+			continue;
+		}
+		if ((STRUCTURE *)orderStateObj(psCurr, DORDER_BUILD) == psStructure)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 /** This function returns an order according to the droid, object (target) and altOrder.*/
 DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 {
@@ -2899,7 +2917,9 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 			{
 				//check to see if anything is currently trying to build the structure
 				//can't build and demolish at the same time!
-				if (psStruct->status == SS_BUILT || !checkDroidsBuilding(psStruct))
+				//(selected droids are ignored, since they are all about to receive this demolish order -
+				// otherwise a truck that is building the structure would block its own demolish order)
+				if (psStruct->status == SS_BUILT || !checkUnselectedDroidsBuilding(psStruct))
 				{
 					order = DroidOrder(DORDER_DEMOLISH, psObj);
 				}
