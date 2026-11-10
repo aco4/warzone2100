@@ -295,6 +295,12 @@ DROID *findSomeoneToRepair(const DROID *psTurret, int radius)
 	return _findSomeoneToRepair(nullptr, queue, psTurret->pos.x, psTurret->pos.y, radius, psTurret->player);
 }
 
+/// How far, in tiles, a truck with nothing to do looks for a structure to repair or help build, by its halt
+/// behaviour. This is both the furthest the structure may be and the furthest the truck may drive to get to it.
+/// A truck holding position has no radius: it works only on what it is already next to.
+static constexpr int CONSTRUCTOR_SEEK_RADIUS_PURSUE_TILES = 7;
+static constexpr int CONSTRUCTOR_SEEK_RADIUS_GUARD_TILES = 4;
+
 namespace
 {
 struct RepairCandidate
@@ -326,9 +332,9 @@ static bool repairCandidateReachable(const PathReachableTiles &reach, const STRU
  * It returns the nearest damaged or incomplete structure the droid can work on, or nullptr if there is none.
  * - Holding position: one it is already close enough to work on, by the action code's own arrival test (actionReachedBuildPos),
  *   whatever the structure's size.
- * - Otherwise: one within REPAIR_MAXDIST that it is already close enough to, or can drive close enough to. One search of
+ * - Otherwise: one within its seek radius (CONSTRUCTOR_SEEK_RADIUS_*_TILES, by halt behaviour) that it is already close enough to, or can drive close enough to. One search of
  *   the tiles the droid can drive to answers for every candidate, so structures out of reach never hide one in reach.
- *   The search covers the pick range and no more, so a structure reachable only by a detour that leaves it is
+ *   The search covers the seek radius and no more, so a structure reachable only by a detour that leaves it is
  *   treated as out of reach: a truck with nothing to do should not set off on a long trip.
  * Candidates at the same distance are taken in ascending object id order, so the choice is the same on every client.
  */
@@ -341,6 +347,9 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 	}
 
 	const bool onHold = (psDroid->order.type == DORDER_HOLD) || (psDroid->order.type == DORDER_NONE && secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD);
+
+	const int seekRadiusTiles = secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_PURSUE ? CONSTRUCTOR_SEEK_RADIUS_PURSUE_TILES : CONSTRUCTOR_SEEK_RADIUS_GUARD_TILES;
+	const unsigned seekRadius = world_coord(seekRadiusTiles);  // Unused on hold.
 
 	WZ_PERF_SCOPE(T_checkForDamagedStruct);
 
@@ -369,7 +378,7 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 		}
 
 		unsigned distanceSq = droidSqDist(psDroid, structure);  // droidSqDist returns -1 if unreachable, (unsigned)-1 is a big number.
-		if ((!onHold && distanceSq > REPAIR_MAXDIST * REPAIR_MAXDIST) ||  // Must be within range.
+		if ((!onHold && distanceSq > seekRadius * seekRadius) ||  // Must be within range.
 		    !visibleObject(psDroid, structure, false) ||  // Must be able to sense it.
 		    checkDroidsDemolishing(structure))  // Must not be trying to get rid of it.
 		{
@@ -398,7 +407,7 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 	}
 	else
 	{
-		for (BASE_OBJECT *object : gridStartIterate(psDroid->pos.x, psDroid->pos.y, REPAIR_MAXDIST))
+		for (BASE_OBJECT *object : gridStartIterate(psDroid->pos.x, psDroid->pos.y, seekRadius))
 		{
 			consider(castStructure(object));
 		}
@@ -419,7 +428,7 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 	PathReachableTiles reach;  // Nothing in reach for a truck that may not move.
 	if (!onHold && !candidates.empty())
 	{
-		reach = fpathDroidReachableTiles(psDroid, gameWorld.map, map_coord(REPAIR_MAXDIST));
+		reach = fpathDroidReachableTiles(psDroid, gameWorld.map, seekRadiusTiles);
 	}
 	for (const RepairCandidate &candidate : candidates)
 	{
