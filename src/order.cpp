@@ -25,6 +25,8 @@
  */
 
 #include <string.h>
+#include <algorithm>
+#include <vector>
 
 #include "lib/framework/frame.h"
 #include "lib/framework/input.h"
@@ -292,8 +294,45 @@ DROID *findSomeoneToRepair(const DROID *psTurret, int radius)
 	return _findSomeoneToRepair(nullptr, queue, psTurret->pos.x, psTurret->pos.y, radius, psTurret->player);
 }
 
+/// How many tiles past REPAIR_MAXDIST the reachability search behind checkForDamagedStruct looks, so a truck
+/// can find its way round a short obstacle to a structure near the edge of its pick range.
+/// This widens the search window only, never the pick range. A structure the truck could reach only by a detour
+/// that leaves the window is treated as out of reach: a truck with nothing to do should not set off on a long trip.
+static constexpr int REPAIR_REACH_DETOUR_TILES = 3;
+
+namespace
+{
+struct RepairCandidate
+{
+	STRUCTURE *structure;
+	DROID_ACTION action;     ///< DACTION_REPAIR or DACTION_BUILD (help build).
+	unsigned distanceSq;
+};
+}
+
+/// Whether the droid can drive to some tile it could work on the structure from (actionBuildPosBounds).
+static bool repairCandidateReachable(const PathReachableTiles &reach, const STRUCTURE *psStruct)
+{
+	const StructureBounds b = actionBuildPosBounds(psStruct->pos.x, psStruct->pos.y, psStruct->rot.direction, psStruct->pStructureType);
+	for (int y = b.map.y; y < b.map.y + b.size.y; ++y)
+	{
+		for (int x = b.map.x; x < b.map.x + b.size.x; ++x)
+		{
+			if (reach.reachable(Vector2i(x, y)))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 /** This function checks if there are any structures to repair or help build in a given radius near the droid defined by REPAIR_RANGE if it is on hold, and REPAIR_MAXDIST if not on hold.
- * It returns a damaged or incomplete structure if any was found or nullptr if none was found.
+ * It returns the nearest damaged or incomplete structure the droid can work on, or nullptr if there is none.
+ * - Holding position: one it is already close enough to work on, by the action code's own arrival test (actionReachedBuildPos).
+ * - Otherwise: one it is already close enough to, or can drive close enough to. One search of the tiles the droid can
+ *   drive to answers for every candidate, so structures out of reach never hide one in reach.
+ * Candidates at the same distance are taken in ascending object id order, so the choice is the same on every client.
  */
 static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid)
 {
@@ -303,13 +342,14 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 		psFailedTarget = (STRUCTURE *)psDroid->psActionTarget[0];
 	}
 
-	unsigned radius = ((psDroid->order.type == DORDER_HOLD) || (psDroid->order.type == DORDER_NONE && secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD)) ? REPAIR_RANGE : REPAIR_MAXDIST;
+	const bool onHold = (psDroid->order.type == DORDER_HOLD) || (psDroid->order.type == DORDER_NONE && secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD);
+	unsigned radius = onHold ? REPAIR_RANGE : REPAIR_MAXDIST;
 
-	unsigned bestDistanceSq = radius * radius;
-	std::pair<STRUCTURE *, DROID_ACTION> best = {nullptr, DACTION_NONE};
+	const unsigned maxDistanceSq = radius * radius;
 
 	WZ_PERF_SCOPE(T_checkForDamagedStruct);
 
+	std::vector<RepairCandidate> candidates;
 	for (BASE_OBJECT *object : gridStartIterate(psDroid->pos.x, psDroid->pos.y, radius))
 	{
 		STRUCTURE *structure = castStructure(object);
@@ -336,18 +376,53 @@ static std::pair<STRUCTURE *, DROID_ACTION> checkForDamagedStruct(DROID *psDroid
 		}
 
 		unsigned distanceSq = droidSqDist(psDroid, object);  // droidSqDist returns -1 if unreachable, (unsigned)-1 is a big number.
-		if (distanceSq > bestDistanceSq ||  // Must be as close as possible.
+		if (distanceSq > maxDistanceSq ||  // Must be within range.
 		    !visibleObject(psDroid, structure, false) ||  // Must be able to sense it.
 		    checkDroidsDemolishing(structure))  // Must not be trying to get rid of it.
 		{
 			continue;
 		}
 
-		bestDistanceSq = distanceSq;
-		best = {structure, action};
+		candidates.push_back({structure, action, distanceSq});
 	}
 
-	return best;
+	// Nearest first. Equal distances go by object id (unique and synced), lowest first, so the order
+	// does not depend on anything clients may hold differently.
+	std::sort(candidates.begin(), candidates.end(), [](const RepairCandidate &a, const RepairCandidate &b) {
+		if (a.distanceSq != b.distanceSq)
+		{
+			return a.distanceSq < b.distanceSq;
+		}
+		return a.structure->id < b.structure->id;
+	});
+
+	// The straight-line distance and droidSqDist's same-region test say nothing about whether the droid can get next
+	// to a structure (a walled-in one passes both), so find out where the droid can drive. Searched once, when first needed.
+	PathReachableTiles reach;
+	bool searched = false;
+	for (const RepairCandidate &candidate : candidates)
+	{
+		const STRUCTURE *psStruct = candidate.structure;
+		if (actionReachedBuildPos(psDroid, psStruct->pos.x, psStruct->pos.y, psStruct->rot.direction, psStruct->pStructureType))
+		{
+			return {candidate.structure, candidate.action};  // Close enough already.
+		}
+		if (onHold)
+		{
+			continue;  // May not move, so only something it can work on from here.
+		}
+		if (!searched)
+		{
+			reach = fpathDroidReachableTiles(psDroid, gameWorld.map, map_coord(REPAIR_MAXDIST) + REPAIR_REACH_DETOUR_TILES);
+			searched = true;
+		}
+		if (repairCandidateReachable(reach, psStruct))
+		{
+			return {candidate.structure, candidate.action};
+		}
+	}
+
+	return {nullptr, DACTION_NONE};
 }
 
 static bool isRepairlikeAction(DROID_ACTION action)
