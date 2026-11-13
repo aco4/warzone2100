@@ -739,6 +739,69 @@ void actionSanity(DROID *psDroid)
 	}
 }
 
+// Look for something to shoot at while the droid is idle or waiting to be repaired.
+// Switches the droid to DACTION_ATTACK if a target is found.
+static void actionIdleDroidLookForTarget(DROID *psDroid, const bool nonNullWeapon[MAX_WEAPONS])
+{
+	const DroidOrderType orderType = psDroid->order.type;
+	if (psDroid->numWeaps == 0 || psDroid->isVtol()
+	    || !(orderType == DORDER_NONE || orderType == DORDER_HOLD || orderType == DORDER_GUARD || psDroid->isRetreatingForRepair()))
+	{
+		return;
+	}
+
+	for (unsigned i = 0; i < psDroid->numWeaps; ++i)
+	{
+		if (nonNullWeapon[i])
+		{
+			BASE_OBJECT *psTemp = nullptr;
+
+			WEAPON_STATS *const psWeapStats = psDroid->getWeaponStats(i);
+			if (psDroid->asWeaps[i].nStat > 0
+			    && psWeapStats->rotate
+			    && IS_TIME_TO_CHECK_FOR_NEW_TARGET(psDroid)
+			    && (secondaryGetState(psDroid, DSO_ATTACK_LEVEL) == DSS_ALEV_ALWAYS)
+			    // don't bother doing this costly calculation again if aiUpdateDroid already checked this tick and failed
+			    && psDroid->lastCheckNearestTargetFailed[i] != gameTime
+			    && aiBestNearestTarget(psDroid, &psTemp, i) >= 0)
+			{
+				psDroid->action = DACTION_ATTACK;
+				setDroidActionTarget(psDroid, psTemp, i);
+			}
+		}
+	}
+}
+
+// Look for something to shoot at while the droid is moving.
+// Switches the droid to DACTION_MOVEFIRE if a target is found for a weapon that can fire on the move.
+static void actionMovingDroidLookForTarget(DROID *psDroid, const bool nonNullWeapon[MAX_WEAPONS])
+{
+	if (psDroid->numWeaps == 0 || psDroid->isVtol())
+	{
+		return;
+	}
+
+	for (unsigned i = 0; i < psDroid->numWeaps; ++i)
+	{
+		if (nonNullWeapon[i])
+		{
+			BASE_OBJECT *psTemp = nullptr;
+
+			WEAPON_STATS *const psWeapStats = psDroid->getWeaponStats(i);
+			if (psDroid->asWeaps[i].nStat > 0
+			    && psWeapStats->rotate
+			    && psWeapStats->fireOnMove
+			    && IS_TIME_TO_CHECK_FOR_NEW_TARGET(psDroid)
+			    && (secondaryGetState(psDroid, DSO_ATTACK_LEVEL) == DSS_ALEV_ALWAYS)
+			    && aiBestNearestTarget(psDroid, &psTemp, i) >= 0)
+			{
+				psDroid->action = DACTION_MOVEFIRE;
+				setDroidActionTarget(psDroid, psTemp, i);
+			}
+		}
+	}
+}
+
 // Update the action state for a droid
 void actionUpdateDroid(DROID *psDroid)
 {
@@ -803,30 +866,7 @@ void actionUpdateDroid(DROID *psDroid)
 	case DACTION_WAITFORREPAIR:
 		// doing nothing
 		// see if there's anything to shoot.
-		if (psDroid->numWeaps > 0 && !psDroid->isVtol()
-		    && (order->type == DORDER_NONE || order->type == DORDER_HOLD || order->type == DORDER_RTR || order->type == DORDER_GUARD))
-		{
-			for (unsigned i = 0; i < psDroid->numWeaps; ++i)
-			{
-				if (nonNullWeapon[i])
-				{
-					BASE_OBJECT *psTemp = nullptr;
-
-					WEAPON_STATS *const psWeapStats = psDroid->getWeaponStats(i);
-					if (psDroid->asWeaps[i].nStat > 0
-					    && psWeapStats->rotate
-						&& IS_TIME_TO_CHECK_FOR_NEW_TARGET(psDroid)
-						&& (secondaryGetState(psDroid, DSO_ATTACK_LEVEL) == DSS_ALEV_ALWAYS)
-						// don't bother doing this costly calculation again if aiUpdateDroid already checked this tick and failed
-						&& psDroid->lastCheckNearestTargetFailed[i] != gameTime
-					    && aiBestNearestTarget(psDroid, &psTemp, i) >= 0)
-					{
-						psDroid->action = DACTION_ATTACK;
-						setDroidActionTarget(psDroid, psTemp, i);
-					}
-				}
-			}
-		}
+		actionIdleDroidLookForTarget(psDroid, nonNullWeapon);
 		break;
 	case DACTION_WAITDURINGREPAIR:
 		// don't want to be in a formation for this move
@@ -859,6 +899,16 @@ void actionUpdateDroid(DROID *psDroid)
 			} else {
 				moveStopDroid(psDroid);
 			}
+		}
+		// keep shooting at enemies while waiting to be repaired, without chasing them
+		if (DROID_STOPPED(psDroid))
+		{
+			actionIdleDroidLookForTarget(psDroid, nonNullWeapon);
+		}
+		else
+		{
+			// walking back to the repair point
+			actionMovingDroidLookForTarget(psDroid, nonNullWeapon);
 		}
 		break;
 	case DACTION_TRANSPORTWAITTOFLYIN:
@@ -907,30 +957,9 @@ void actionUpdateDroid(DROID *psDroid)
 				triggerEventDroidIdle(psDroid);
 			}
 		}
-		//added multiple weapon check
-		else if (psDroid->numWeaps > 0)
+		else
 		{
-			for (unsigned i = 0; i < psDroid->numWeaps; ++i)
-			{
-				if (nonNullWeapon[i])
-				{
-					BASE_OBJECT *psTemp = nullptr;
-
-					//I moved psWeapStats flag update there
-					WEAPON_STATS *const psWeapStats = psDroid->getWeaponStats(i);
-					if (!psDroid->isVtol()
-					    && psDroid->asWeaps[i].nStat > 0
-					    && psWeapStats->rotate
-					    && psWeapStats->fireOnMove
-						&& IS_TIME_TO_CHECK_FOR_NEW_TARGET(psDroid)
-						&& (secondaryGetState(psDroid, DSO_ATTACK_LEVEL) == DSS_ALEV_ALWAYS)
-					    && aiBestNearestTarget(psDroid, &psTemp, i) >= 0)
-					{
-						psDroid->action = DACTION_MOVEFIRE;
-						setDroidActionTarget(psDroid, psTemp, i);
-					}
-				}
-			}
+			actionMovingDroidLookForTarget(psDroid, nonNullWeapon);
 		}
 		break;
 	case DACTION_TRANSPORTIN:
@@ -1250,7 +1279,7 @@ void actionUpdateDroid(DROID *psDroid)
 			else if (secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_PURSUE &&
 				!supportsSensorTower &&
 				!(order->type == DORDER_HOLD ||
-				order->type == DORDER_RTR))
+				psDroid->isRetreatingForRepair()))
 			{
 				//We need this so pursuing doesn't stop if a unit is ordered to move somewhere while
 				//it is still in weapon range of the target when reaching the end destination.
@@ -1260,7 +1289,7 @@ void actionUpdateDroid(DROID *psDroid)
 			else if (supportsSensorTower ||
 				order->type == DORDER_NONE ||
 				order->type == DORDER_HOLD ||
-				order->type == DORDER_RTR)
+				psDroid->isRetreatingForRepair())
 			{
 				// don't move if on hold or firesupport for a sensor tower
 				// also don't move if we're holding position or waiting for repair
