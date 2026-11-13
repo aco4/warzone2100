@@ -1721,9 +1721,17 @@ ObjectShape establishTargetShape(const BASE_OBJECT *psTarget)
 		case DROID_CYBORG_SUPER:
 			//Watermelon:'hitbox' size is now based on imd size
 			return abs(psTarget->sDisplay.imd->radius) * 2;
-		case DROID_DEFAULT:
 		case DROID_TRANSPORTER:
 		case DROID_SUPERTRANSPORTER:
+			// Transporters are much bigger than the default hitbox below, which made projectiles
+			// (especially homing AA) circle around their centre point instead of hitting them.
+			// Use the model's own extent instead.
+			if (psTarget->sDisplay.imd != nullptr)
+			{
+				return std::max<int>(abs(psTarget->sDisplay.imd->radius), TILE_UNITS / 4);
+			}
+			return TILE_UNITS / 4;
+		case DROID_DEFAULT:
 		default:
 			return TILE_UNITS / 4; // how will we arrive at this?
 		}
