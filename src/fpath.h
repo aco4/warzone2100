@@ -189,8 +189,9 @@ struct PathReachableTiles
 
 /** Returns the tiles that are reachable without leaving a disc centred on the
  *  droid's tile. Tiles only reachable by exiting the disc are excluded. The disc
- *  holds the tiles whose centres are less than radius + 1/2 tiles from the centre
- *  tile's (dx² + dy² <= radius² + radius), so a radius of 0 is the droid's own tile.
+ *  holds the tiles whose centres are less than radius + 1/4 tiles from the centre
+ *  tile's (dx² + dy² <= radius² + floor(radius/2)), so a radius of 0 is the droid's
+ *  own tile.
  *
  *  Unlike fpathCheck, structures and features count as obstacles.
  *

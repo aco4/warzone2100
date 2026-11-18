@@ -484,9 +484,10 @@ PathReachableTiles fpathDroidReachableTiles(const DROID *psDroid, const WorldMap
 	const Vector2i centre = map_coord(psDroid->pos.xy());
 	const Vector2i origin(std::max(centre.x - radius, 0), std::max(centre.y - radius, 0));
 	const Vector2i end(std::min(centre.x + radius + 1, mapState.width), std::min(centre.y + radius + 1, mapState.height));
-	// A tile is in the disc when its distance from the centre tile is under radius + 1/2. For whole numbers,
-	// dx² + dy² < (r + 1/2)² is dx² + dy² <= r² + r, which avoids a lone tile poking out at each compass point.
-	const int discLimitSq = radius * radius + radius;
+	// A tile is in the disc when its distance from the centre tile is under radius + 1/4. For whole numbers,
+	// dx² + dy² < (r + 1/4)² is dx² + dy² <= r² + floor(r/2). From radius 2 up, this avoids the lone tile that a
+	// cutoff of r would leave poking out at each compass point.
+	const int discLimitSq = radius * radius + radius / 2;
 	auto inDisc = [&](Vector2i t) {
 		const Vector2i d = t - centre;
 		return d.x * d.x + d.y * d.y <= discLimitSq;
