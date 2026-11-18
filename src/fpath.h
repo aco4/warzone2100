@@ -162,7 +162,8 @@ public:
 	FPathDroidUpdateScope &operator=(FPathDroidUpdateScope &&) = delete;
 };
 
-/// The tiles of a square window that a droid can drive to, as found by fpathDroidReachableTiles.
+/// The tiles of a disc that a droid can drive to, as found by fpathDroidReachableTiles. The window is the disc's
+/// bounding square, clipped to the map.
 struct PathReachableTiles
 {
 	Vector2i origin = Vector2i(0, 0);  ///< Top left tile of the window.
@@ -186,9 +187,10 @@ struct PathReachableTiles
 	}
 };
 
-/** Returns the tiles that are reachable without leaving a square area. Tiles
- *  only reachable by exiting the square area are excluded. The radius parameter
- *  defines the size of the square area (clipped to the map).
+/** Returns the tiles that are reachable without leaving a disc centred on the
+ *  droid's tile. Tiles only reachable by exiting the disc are excluded. The disc
+ *  holds the tiles whose centres are less than radius + 1/2 tiles from the centre
+ *  tile's (dx² + dy² <= radius² + radius), so a radius of 0 is the droid's own tile.
  *
  *  Unlike fpathCheck, structures and features count as obstacles.
  *

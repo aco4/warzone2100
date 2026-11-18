@@ -479,13 +479,21 @@ PathReachableTiles fpathDroidReachableTiles(const DROID *psDroid, const WorldMap
 	const FPATH_MOVETYPE moveType = fpathDroidMoveType(psDroid, FMT_MOVE);
 	const Vector2i start = map_coord(findNonblockingPosition(mapState, psDroid->pos, propulsion, owner, moveType).xy());
 
-	// Centre the window on the droid, not the start tile, which can be a couple of tiles away.
+	// Centre the disc on the droid, not the start tile, which can be a couple of tiles away.
+	// The window is the disc's bounding square; tiles of the window outside the disc are never flagged.
 	const Vector2i centre = map_coord(psDroid->pos.xy());
 	const Vector2i origin(std::max(centre.x - radius, 0), std::max(centre.y - radius, 0));
 	const Vector2i end(std::min(centre.x + radius + 1, mapState.width), std::min(centre.y + radius + 1, mapState.height));
-	if (start.x < origin.x || start.y < origin.y || start.x >= end.x || start.y >= end.y)
+	// A tile is in the disc when its distance from the centre tile is under radius + 1/2. For whole numbers,
+	// dx² + dy² < (r + 1/2)² is dx² + dy² <= r² + r, which avoids a lone tile poking out at each compass point.
+	const int discLimitSq = radius * radius + radius;
+	auto inDisc = [&](Vector2i t) {
+		const Vector2i d = t - centre;
+		return d.x * d.x + d.y * d.y <= discLimitSq;
+	};
+	if (start.x < origin.x || start.y < origin.y || start.x >= end.x || start.y >= end.y || !inDisc(start))
 	{
-		return out;  // The start is off the map or outside the window.
+		return out;  // The start is off the map or outside the disc.
 	}
 	out.origin = origin;
 	out.width = end.x - origin.x;
@@ -494,7 +502,9 @@ PathReachableTiles fpathDroidReachableTiles(const DROID *psDroid, const WorldMap
 	auto flag = [&](Vector2i t) -> uint8_t & { return out.flags[out.index(t)]; };
 
 	// Orthogonal steps reach the same tiles a route can: a route never cuts a corner (fpathAStarExplore), so both tiles
-	// beside a diagonal step are open and two orthogonal steps reach the same tile. Like a route, start even if blocked.
+	// beside a diagonal step are open and two orthogonal steps reach the same tile. One of those two tiles is always in
+	// the disc too, as it takes each coordinate from whichever end of the step is nearer the centre on that axis.
+	// Like a route, start even if blocked.
 	static const Vector2i steps[] = {Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1), Vector2i(1, 0)};
 	std::vector<Vector2i> open(1, start);
 	flag(start) = 1;
@@ -505,7 +515,7 @@ PathReachableTiles fpathDroidReachableTiles(const DROID *psDroid, const WorldMap
 		for (const Vector2i &step : steps)
 		{
 			const Vector2i next = tile + step;
-			if (out.inWindow(next) && !flag(next) && !fpathBaseBlockingTile(mapState, next.x, next.y, propulsion, owner, moveType))
+			if (out.inWindow(next) && inDisc(next) && !flag(next) && !fpathBaseBlockingTile(mapState, next.x, next.y, propulsion, owner, moveType))
 			{
 				flag(next) = 1;
 				open.push_back(next);
